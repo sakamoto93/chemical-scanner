@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+*.swp
+
+# Word files
+*.docx
+*.doc
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Project specific
+exports/
