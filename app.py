@@ -8,7 +8,7 @@ import io
 from PIL import Image
 
 app = FastAPI()
-ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
