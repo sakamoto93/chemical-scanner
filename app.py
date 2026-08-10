@@ -41,7 +41,22 @@ async def video_feed():
         get_camera_frame(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
-
+@app.get("/capture")
+async def capture_frame():
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
+    
+    if not ret:
+        return JSONResponse({"error": "Failed to capture frame"}, status_code=400)
+    
+    ret, buffer = cv2.imencode('.jpg', frame)
+    frame_bytes = buffer.tobytes()
+    
+    return StreamingResponse(
+        iter([frame_bytes]),
+        media_type="image/jpeg"
+    )
 @app.post("/ocr")
 async def perform_ocr(file: UploadFile = File(...)):
     try:
@@ -49,21 +64,24 @@ async def perform_ocr(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(contents))
         image_array = np.array(image)
 
-        result = ocr.ocr(image_array, cls=True)
+        result = ocr.ocr(image_array)
 
         texts = []
-        for line in result:
-            for word_info in line:
-                text = word_info[1]
-                confidence = float(word_info[2])
-                texts.append({
-                    "text": text,
-                    "confidence": confidence
-                })
+        if result and isinstance(result, list) and len(result) > 0:
+            result_dict = result[0]
+            if isinstance(result_dict, dict):
+                rec_texts = result_dict.get('rec_texts', [])
+                rec_scores = result_dict.get('rec_scores', [])
+                for text, score in zip(rec_texts, rec_scores):
+                    texts.append({
+                        "text": text,
+                        "confidence": float(score)
+                    })
 
         return JSONResponse({"texts": texts})
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        import traceback
+        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
 
 if __name__ == "__main__":
     import uvicorn
