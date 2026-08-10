@@ -1,9 +1,14 @@
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import cv2
+import numpy as np
+from paddleocr import PaddleOCR
+import io
+from PIL import Image
 
 app = FastAPI()
+ocr = PaddleOCR(use_angle_cls=True, lang='ch')
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -36,6 +41,29 @@ async def video_feed():
         get_camera_frame(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+@app.post("/ocr")
+async def perform_ocr(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        image_array = np.array(image)
+
+        result = ocr.ocr(image_array, cls=True)
+
+        texts = []
+        for line in result:
+            for word_info in line:
+                text = word_info[1]
+                confidence = float(word_info[2])
+                texts.append({
+                    "text": text,
+                    "confidence": confidence
+                })
+
+        return JSONResponse({"texts": texts})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 if __name__ == "__main__":
     import uvicorn

@@ -11,7 +11,50 @@
         <h1>Chemical Scanner</h1>
         <div class="camera-container">
             <img id="camera" src="/video_feed" alt="Camera Feed">
+            <canvas id="canvas" style="display:none;"></canvas>
+        </div>
+        <div class="controls">
+            <button id="capture-btn">キャプチャ＆OCR実行</button>
+        </div>
+        <div class="results">
+            <h2>OCR結果</h2>
+            <div id="ocr-results"></div>
         </div>
     </div>
+    <script>
+        const captureBtn = document.getElementById('capture-btn');
+        const camera = document.getElementById('camera');
+        const canvas = document.getElementById('canvas');
+        const ocrResults = document.getElementById('ocr-results');
+
+        captureBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/video_feed');
+                const blob = await response.blob();
+
+                const formData = new FormData();
+                formData.append('file', blob, 'frame.jpg');
+
+                const ocrResponse = await fetch('/ocr', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await ocrResponse.json();
+
+                if (data.error) {
+                    ocrResults.innerHTML = `<p class="error">エラー: ${data.error}</p>`;
+                } else {
+                    let html = '';
+                    data.texts.forEach(item => {
+                        html += `<p><strong>${item.text}</strong> (信頼度: ${(item.confidence * 100).toFixed(1)}%)</p>`;
+                    });
+                    ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';
+                }
+            } catch (error) {
+                ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            }
+        });
+    </script>
 </body>
 </html>
