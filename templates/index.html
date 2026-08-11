@@ -29,6 +29,12 @@
 
         let isRunning = false;
         let intervalId = null;
+        let previousTexts = [];
+
+        // テキスト配列をJSON文字列に変換（比較用）
+        function textsToString(texts) {
+            return JSON.stringify(texts.map(item => item.text));
+        }
 
         // OCR実行関数
         async function performOCR() {
@@ -48,12 +54,21 @@
 
                 if (data.error) {
                     ocrResults.innerHTML = `<p class="error">エラー: ${data.error}</p>`;
+                    previousTexts = [];
                 } else {
-                    let html = '';
-                    data.texts.forEach(item => {
-                        html += `<p><strong>${item.text}</strong> (信頼度: ${(item.confidence * 100).toFixed(1)}%)</p>`;
-                    });
-                    ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';
+                    // 現在のテキストと前フレームを比較
+                    const currentTextsStr = textsToString(data.texts);
+                    const previousTextsStr = textsToString(previousTexts);
+
+                    // テキストが異なる場合のみ表示を更新
+                    if (currentTextsStr !== previousTextsStr) {
+                        let html = '';
+                        data.texts.forEach(item => {
+                            html += `<p><strong>${item.text}</strong> (信頼度: ${(item.confidence * 100).toFixed(1)}%)</p>`;
+                        });
+                        ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';
+                        previousTexts = data.texts;
+                    }
                 }
             } catch (error) {
                 ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
