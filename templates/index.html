@@ -30,6 +30,7 @@
         let isRunning = false;
         let intervalId = null;
         let previousTexts = [];
+        let shouldStop = false;
 
         // テキスト配列をJSON文字列に変換（比較用）
         function textsToString(texts) {
@@ -38,6 +39,11 @@
 
         // OCR実行関数
         async function performOCR() {
+            // 停止フラグが立っている場合は実行しない
+            if (shouldStop) {
+                return;
+            }
+
             try {
                 const response = await fetch('/capture');
                 const blob = await response.blob();
@@ -51,6 +57,11 @@
                 });
 
                 const data = await ocrResponse.json();
+
+                // 停止中に処理が完了した場合は表示しない
+                if (shouldStop) {
+                    return;
+                }
 
                 if (data.error) {
                     ocrResults.innerHTML = `<p class="error">エラー: ${data.error}</p>`;
@@ -80,11 +91,13 @@
             if (isRunning) {
                 // 停止
                 clearInterval(intervalId);
+                shouldStop = true; // 停止フラグを立てる
                 isRunning = false;
                 captureBtn.textContent = '自動スキャン: 開始';
                 statusEl.textContent = '停止中';
             } else {
                 // 開始
+                shouldStop = false; // 停止フラグを下ろす
                 isRunning = true;
                 captureBtn.textContent = '自動スキャン: 停止';
                 statusEl.textContent = '実行中...';
