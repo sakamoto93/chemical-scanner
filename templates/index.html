@@ -100,13 +100,19 @@
                 shouldStop = false; // 停止フラグを下ろす
                 isRunning = true;
                 captureBtn.textContent = '自動スキャン: 停止';
-                statusEl.textContent = '実行中...';
+                statusEl.textContent = '5秒後に開始...';
 
-                // 初回は即座に実行
-                performOCR();
+                // 5秒後にスキャン開始（ユーザーが試薬瓶を位置調整する時間を確保）
+                setTimeout(() => {
+                    if (isRunning) {
+                        statusEl.textContent = '実行中...';
+                        // 初回は即座に実行
+                        performOCR();
 
-                // その後2.5秒ごとに実行
-                intervalId = setInterval(performOCR, 2500);
+                        // その後2.5秒ごとに実行
+                        intervalId = setInterval(performOCR, 2500);
+                    }
+                }, 5000);
             }
         });
 
