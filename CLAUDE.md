@@ -22,11 +22,20 @@
 - テキスト抽出 (`/ocr` エンドポイント)
 - 信頼度付きテキスト表示
 
-#### Step1-2.5: 自動OCR実行機能（8月11日完成）
+#### Step1-2.5: 自動OCR実行機能（8月11日完成 → 8月11日改善完了）
+
+**完成（8月11日 初版）**
 - JavaScriptで1秒ごとに定期実行
 - ページロード時に自動実行開始
 - 「自動スキャン: 開始/停止」ボタンで制御
 - ステータス表示機能
+- 前フレーム比較による重複検出回避（Phase 2）
+
+**改善（8月11日 Phase 3）**
+- ページロード時の自動開始を削除 → ユーザーが手動でボタンをクリック
+- 5秒の起動遅延を実装 → 試薬瓶の位置調整時間を確保
+- カウントダウン表示を追加 → ユーザーが残り時間を把握できるように
+- スキャン間隔を1秒から2.5秒に最適化 → CPU負荷削減
 
 **実装内容：**
 ```
@@ -35,12 +44,22 @@ app.py:
 - POST /ocr: PaddleOCR処理（辞書形式の新しい結果構造に対応）
 
 templates/index.html:
-- 「キャプチャ&OCR実行」ボタン
+- 「自動スキャン: 開始/停止」ボタン（手動クリック開始）
+- カウントダウン表示機能（5秒間、秒数をリアルタイム更新）
+- performOCR()関数：前フレーム比較による重複チェック
+- shouldStop フラグによる即座停止機能
 - OCR結果表示エリア（テキスト + 信頼度）
 
 static/style.css:
 - UIレイアウト・スタイリング
 ```
+
+**テスト結果（8月11日 Mac）**
+- ✅ ボタンクリック後、「5秒後に開始...」と表示
+- ✅ カウントダウンが毎秒更新（5→4→3→2→1）
+- ✅ 5秒後に「実行中...」に変わり、スキャン開始
+- ✅ 2.5秒ごとの定期実行で安定動作
+- ✅ 停止ボタンで即座にスキャン停止
 
 ### 📊 テスト結果
 
@@ -161,15 +180,15 @@ main (リモート)
     └── Step1-3: CAS lookup (計画中)
 ```
 
-### 最新コミット
+### 最新コミット（8月11日）
 
 ```
-4849316 docs: Update Step1-3 implementation plan with CAS number reverse lookup strategy
-73c661b Fix: PaddleOCR result parsing for new API format
-793620c Fix: Update PaddleOCR parameters (use_textline_orientation, lang='en')
-0a03d26 Step1-2: Implement PaddleOCR text extraction from camera
-9edeb6b Update: iPhone Claude GitHub integration support
-e313b62 Step1-1: Camera display with FastAPI and OpenCV
+4d46199 Feature: Add countdown display for startup delay
+bef9f85 Fix: Remove auto-start on page load - require manual button click
+69c07d9 Feature: Add 5-second startup delay for reagent bottle positioning
+ee7f5c3 Fix: Add stop flag to prevent OCR results after stopping
+16fa2bf Step1-2.5 Phase2: Implement frame comparison to avoid duplicate text updates
+71a69c2 Optimize: Increase OCR scan interval from 1s to 2.5s for better performance
 ```
 
 ### iPhone Claude対応
@@ -195,33 +214,42 @@ e313b62 Step1-1: Camera display with FastAPI and OpenCV
 
 ## 次回作業予定
 
-### 優先度：高
+### 優先度：高（Step1-3実装準備）
 
-1. **Step1-2.5テスト＆改善** - 自動OCR実行機能（本日完成）
-   - ✅ JavaScriptで定期実行（1秒ごと）実装
-   - ✅ ボタンをクリックせずに自動スキャン
-   - ✅ リアルタイム結果表示
-   - 📌 Mac上でのテスト実施（CPU負荷確認）
-   - 📌 Phase2計画：前フレーム比較による最適化
-
-### 優先度：中
-
-2. **Step1-3実装** - CAS番号逆引き機能
+1. **Step1-3実装** - CAS番号抽出・化合物情報取得
    - PubChem API統合
    - テキスト解析・化合物情報抽出
    - 正規表現によるCAS番号検証
+   - CAS番号からの化合物名取得
 
-3. **テスト拡張** - より多くの試薬でテスト
-   - 英語ラベル
-   - 日本語ラベル
-   - 中国語ラベル
+### 優先度：中（今後の改善）
+
+2. **読み取り速度の改善**
+   - 現在の課題：OCR処理に時間がかかる
+   - 検討事項：モデルの軽量化、並列処理
+   - テスト：複数の試薬でベンチマーク実施
+
+3. **枠内検出機能の実装**（中期目標）
+   - 目的：試薬瓶がカメラ枠内に来たら自動スキャン開始
+   - 方針：OpenCVの物体検出またはシンプルな枠内判定
+   - メリット：ユーザーが瓶を枠に合わせるだけでOK
+   - 実装時期：Step1-3完了後（Phase 4）
+
+4. **テスト拡張** - より多くの試薬でテスト
+   - 英語ラベル試薬
+   - 日本語ラベル試薬
+   - 中国語混在試薬
 
 ### 優先度：低（Step1完成後）
 
-4. **UI改善**
+5. **UI改善**
    - 検出されたCAS番号のハイライト
-   - 複数試薬の連続スキャン機能
-   - 結果の一覧表示
+   - 複数試薬の連続スキャン結果の一覧表示
+   - 履歴機能
+
+6. **Step2以降**（既存Excel台帳との互換化）
+   - 列順・項目・フォーマット調整
+   - 出力様式のカスタマイズ
 
 ---
 
@@ -234,6 +262,12 @@ e313b62 Step1-1: Camera display with FastAPI and OpenCV
 
 ---
 
-**最終更新:** 2026-08-11
-**担当**: Claude + iPhone Claude
-**ステータス**: Step1-2.5完成 → Step1-3準備中
+**最終更新:** 2026-08-11（改善版）
+**担当**: Claude + iPhone Claude + Mac テスト
+**ステータス**: Step1-2.5改善完了 → Step1-3実装開始準備中
+
+**本日の成果：**
+- ✅ 5秒の起動遅延機能実装
+- ✅ カウントダウン表示機能実装
+- ✅ Macでのテスト完了
+- ✅ 今後の課題を明確化（読み取り速度改善、枠内検出機能）
