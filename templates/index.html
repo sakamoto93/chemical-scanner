@@ -14,7 +14,8 @@
             <canvas id="canvas" style="display:none;"></canvas>
         </div>
         <div class="controls">
-            <button id="capture-btn">キャプチャ＆OCR実行</button>
+            <button id="capture-btn">自動スキャン: 開始</button>
+            <span id="status"></span>
         </div>
         <div class="results">
             <h2>OCR結果</h2>
@@ -23,11 +24,14 @@
     </div>
     <script>
         const captureBtn = document.getElementById('capture-btn');
-        const camera = document.getElementById('camera');
-        const canvas = document.getElementById('canvas');
+        const statusEl = document.getElementById('status');
         const ocrResults = document.getElementById('ocr-results');
 
-        captureBtn.addEventListener('click', async () => {
+        let isRunning = false;
+        let intervalId = null;
+
+        // OCR実行関数
+        async function performOCR() {
             try {
                 const response = await fetch('/capture');
                 const blob = await response.blob();
@@ -54,6 +58,33 @@
             } catch (error) {
                 ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
             }
+        }
+
+        // ボタンクリックで開始/停止
+        captureBtn.addEventListener('click', () => {
+            if (isRunning) {
+                // 停止
+                clearInterval(intervalId);
+                isRunning = false;
+                captureBtn.textContent = '自動スキャン: 開始';
+                statusEl.textContent = '停止中';
+            } else {
+                // 開始
+                isRunning = true;
+                captureBtn.textContent = '自動スキャン: 停止';
+                statusEl.textContent = '実行中...';
+
+                // 初回は即座に実行
+                performOCR();
+
+                // その後1秒ごとに実行
+                intervalId = setInterval(performOCR, 1000);
+            }
+        });
+
+        // ページロード時に自動開始
+        window.addEventListener('load', () => {
+            captureBtn.click();
         });
     </script>
 </body>
