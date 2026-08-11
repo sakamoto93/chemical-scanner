@@ -29,6 +29,7 @@
 
         let isRunning = false;
         let intervalId = null;
+        let countdownInterval = null;
         let previousTexts = [];
         let shouldStop = false;
 
@@ -91,6 +92,7 @@
             if (isRunning) {
                 // 停止
                 clearInterval(intervalId);
+                clearInterval(countdownInterval);
                 shouldStop = true; // 停止フラグを立てる
                 isRunning = false;
                 captureBtn.textContent = '自動スキャン: 開始';
@@ -100,19 +102,27 @@
                 shouldStop = false; // 停止フラグを下ろす
                 isRunning = true;
                 captureBtn.textContent = '自動スキャン: 停止';
-                statusEl.textContent = '5秒後に開始...';
 
-                // 5秒後にスキャン開始（ユーザーが試薬瓶を位置調整する時間を確保）
-                setTimeout(() => {
-                    if (isRunning) {
-                        statusEl.textContent = '実行中...';
-                        // 初回は即座に実行
-                        performOCR();
+                // カウントダウン処理
+                let countdown = 5;
+                statusEl.textContent = countdown + '秒後に開始...';
 
-                        // その後2.5秒ごとに実行
-                        intervalId = setInterval(performOCR, 2500);
+                countdownInterval = setInterval(() => {
+                    countdown--;
+                    if (countdown > 0) {
+                        statusEl.textContent = countdown + '秒後に開始...';
+                    } else {
+                        clearInterval(countdownInterval);
+                        if (isRunning) {
+                            statusEl.textContent = '実行中...';
+                            // 初回は即座に実行
+                            performOCR();
+
+                            // その後2.5秒ごとに実行
+                            intervalId = setInterval(performOCR, 2500);
+                        }
                     }
-                }, 5000);
+                }, 1000);
             }
         });
 
