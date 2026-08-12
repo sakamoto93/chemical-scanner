@@ -37,6 +37,12 @@
 - カウントダウン表示を追加 → ユーザーが残り時間を把握できるように
 - スキャン間隔を1秒から2.5秒に最適化 → CPU負荷削減
 
+**さらに改善（8月11日 Phase 4）**
+- ブラウザ上でユーザーが設定値を調整可能に
+- スタートアップ遅延（1～60秒）をリアルタイムで変更可能
+- スキャン間隔（0.5～30秒）をリアルタイムで変更可能
+- 実験環境に最適な値を各自で設定できるように
+
 **実装内容：**
 ```
 app.py:
@@ -45,13 +51,15 @@ app.py:
 
 templates/index.html:
 - 「自動スキャン: 開始/停止」ボタン（手動クリック開始）
-- カウントダウン表示機能（5秒間、秒数をリアルタイム更新）
+- カウントダウン表示機能（秒数をリアルタイム更新）
+- スキャン設定セクション（スタートアップ遅延、スキャン間隔の調整）
 - performOCR()関数：前フレーム比較による重複チェック
 - shouldStop フラグによる即座停止機能
 - OCR結果表示エリア（テキスト + 信頼度）
 
 static/style.css:
 - UIレイアウト・スタイリング
+- 設定セクションのスタイル（.settings, .setting-group）
 ```
 
 **テスト結果（8月11日 Mac）**
@@ -183,6 +191,8 @@ main (リモート)
 ### 最新コミット（8月11日）
 
 ```
+5af760b Feature: Add adjustable settings for startup delay and scan interval
+ee9185e docs: Update progress logs for Step1-2.5 Phase 3 completion
 4d46199 Feature: Add countdown display for startup delay
 bef9f85 Fix: Remove auto-start on page load - require manual button click
 69c07d9 Feature: Add 5-second startup delay for reagent bottle positioning
@@ -267,7 +277,11 @@ ee7f5c3 Fix: Add stop flag to prevent OCR results after stopping
 **ステータス**: Step1-2.5改善完了 → Step1-3実装開始準備中
 
 **本日の成果：**
-- ✅ 5秒の起動遅延機能実装
-- ✅ カウントダウン表示機能実装
+- ✅ 5秒の起動遅延機能実装（Phase 3）
+- ✅ カウントダウン表示機能実装（Phase 3）
+- ✅ ユーザー調整可能な設定機能実装（Phase 4）
+  - スタートアップ遅延（1～60秒）
+  - スキャン間隔（0.5～30秒）
 - ✅ Macでのテスト完了
 - ✅ 今後の課題を明確化（読み取り速度改善、枠内検出機能）
+- ✅ ドキュメント更新完了
