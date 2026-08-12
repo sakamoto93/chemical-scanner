@@ -17,6 +17,17 @@
             <button id="capture-btn">自動スキャン: 開始</button>
             <span id="status"></span>
         </div>
+        <div class="settings">
+            <h3>スキャン設定</h3>
+            <div class="setting-group">
+                <label for="startup-delay">スタートアップ遅延（秒）:</label>
+                <input type="number" id="startup-delay" value="5" min="1" max="60" step="0.5">
+            </div>
+            <div class="setting-group">
+                <label for="scan-interval">スキャン間隔（秒）:</label>
+                <input type="number" id="scan-interval" value="2.5" min="0.5" max="30" step="0.5">
+            </div>
+        </div>
         <div class="results">
             <h2>OCR結果</h2>
             <div id="ocr-results"></div>
@@ -26,12 +37,25 @@
         const captureBtn = document.getElementById('capture-btn');
         const statusEl = document.getElementById('status');
         const ocrResults = document.getElementById('ocr-results');
+        const startupDelayInput = document.getElementById('startup-delay');
+        const scanIntervalInput = document.getElementById('scan-interval');
 
         let isRunning = false;
         let intervalId = null;
         let countdownInterval = null;
         let previousTexts = [];
         let shouldStop = false;
+        let startupDelay = 5;
+        let scanInterval = 2.5;
+
+        // 設定変更時のイベントリスナー
+        startupDelayInput.addEventListener('change', () => {
+            startupDelay = parseFloat(startupDelayInput.value);
+        });
+
+        scanIntervalInput.addEventListener('change', () => {
+            scanInterval = parseFloat(scanIntervalInput.value);
+        });
 
         // テキスト配列をJSON文字列に変換（比較用）
         function textsToString(texts) {
@@ -104,7 +128,7 @@
                 captureBtn.textContent = '自動スキャン: 停止';
 
                 // カウントダウン処理
-                let countdown = 5;
+                let countdown = startupDelay;
                 statusEl.textContent = countdown + '秒後に開始...';
 
                 countdownInterval = setInterval(() => {
@@ -118,8 +142,8 @@
                             // 初回は即座に実行
                             performOCR();
 
-                            // その後2.5秒ごとに実行
-                            intervalId = setInterval(performOCR, 2500);
+                            // スキャン間隔（秒）で実行
+                            intervalId = setInterval(performOCR, scanInterval * 1000);
                         }
                     }
                 }, 1000);
