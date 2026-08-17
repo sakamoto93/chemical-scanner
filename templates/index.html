@@ -99,9 +99,24 @@
                     // テキストが異なる場合のみ表示を更新
                     if (currentTextsStr !== previousTextsStr) {
                         let html = '';
+
+                        // OCRで抽出したテキストを表示
                         data.texts.forEach(item => {
                             html += `<p><strong>${item.text}</strong> (信頼度: ${(item.confidence * 100).toFixed(1)}%)</p>`;
                         });
+
+                        // CAS番号と化合物情報を表示
+                        if (data.cas_number) {
+                            html += `<hr><p><strong>検出CAS番号:</strong> ${data.cas_number}</p>`;
+                            if (data.compound_info) {
+                                html += `<p><strong>化合物名:</strong> ${data.compound_info.name}</p>`;
+                                html += `<p><strong>分子式:</strong> ${data.compound_info.formula}</p>`;
+                                html += `<p><strong>分子量:</strong> ${data.compound_info.weight}</p>`;
+                            } else {
+                                html += `<p><em>化合物情報が見つかりません</em></p>`;
+                            }
+                        }
+
                         ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';
                         previousTexts = data.texts;
                     }

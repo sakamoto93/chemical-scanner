@@ -6,12 +6,60 @@ import numpy as np
 from paddleocr import PaddleOCR
 import io
 from PIL import Image
+import re
+import pubchempy as pcp
 
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+def extract_cas_number(texts):
+    """OCRテキストからCAS番号を抽出"""
+    cas_pattern = r'\d{2,7}-\d{2}-\d'
+    for text_obj in texts:
+        text = text_obj.get('text', '') if isinstance(text_obj, dict) else text_obj
+        match = re.search(cas_pattern, text)
+        if match:
+            return match.group(0)
+    return None
+
+def validate_cas_checkdigit(cas_number):
+    """CAS番号のチェックディジットを検証"""
+    try:
+        parts = cas_number.split('-')
+        if len(parts) != 3:
+            return False
+
+        main_part = parts[0] + parts[1]
+        check_digit = int(parts[2])
+
+        total = 0
+        for i, digit in enumerate(reversed(main_part)):
+            total += int(digit) * (i + 1)
+
+        calculated_check = (10 - (total % 10)) % 10
+        return check_digit == calculated_check
+    except:
+        return False
+
+def search_pubchem_by_cas(cas_number):
+    """CAS番号からPubChemで化合物情報を取得"""
+    try:
+        compounds = pcp.get_compounds(cas_number, 'cid')
+        if compounds:
+            compound = compounds[0]
+            return {
+                "cas": cas_number,
+                "name": getattr(compound, 'iupac_name', 'N/A'),
+                "formula": getattr(compound, 'molecular_formula', 'N/A'),
+                "weight": getattr(compound, 'molecular_weight', 'N/A'),
+                "cid": compound.cid
+            }
+    except Exception as e:
+        pass
+    return None
 
 def get_camera_frame():
     cap = cv2.VideoCapture(0)
@@ -78,7 +126,21 @@ async def perform_ocr(file: UploadFile = File(...)):
                         "confidence": float(score)
                     })
 
-        return JSONResponse({"texts": texts})
+        # CAS番号を抽出
+        cas_number = extract_cas_number(texts)
+        compound_info = None
+
+        if cas_number:
+            # チェックディジットを検証
+            if validate_cas_checkdigit(cas_number):
+                # PubChemで化合物情報を取得
+                compound_info = search_pubchem_by_cas(cas_number)
+
+        return JSONResponse({
+            "texts": texts,
+            "cas_number": cas_number,
+            "compound_info": compound_info
+        })
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
