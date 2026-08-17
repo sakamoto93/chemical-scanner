@@ -287,9 +287,9 @@ f5ae047 Fix: Skip CAS checkdigit validation and search PubChem directly
 
 ---
 
-**最終更新:** 2026-08-17（本日完了） / Step1-5実装開始
-**担当**: Claude + Mac テスト
-**ステータス**: Step1-2.5完成 ✅ → Step1-3完成 ✅ → Step1-5実装中 (Phase1完成)
+**最終更新:** 2026-08-17（iPhone テスト完了）
+**担当**: Claude (Backend/Frontend) + iPhone テスト
+**ステータス**: Step1-2.5完成 ✅ → Step1-3完成 ✅ → Step1-5完成 ✅ (Phase1完成・動作確認済み)
 
 ---
 
@@ -412,6 +412,18 @@ function deleteFromList(index)
 - `compoundList` 配列でリストを管理（メモリ内）
 - `updateCompoundTable()` で動的にテーブル行を生成
 - `deleteFromList()` でインデックスベースの削除を実装
+
+**動作確認テスト結果**（iPhone経由で実装確認）✅
+- テスト試薬1：Thymol (CAS: 89-83-8)
+  - ✅ リストに追加成功
+  - ✅ テーブルに正常に表示
+  - 分子式: C10H14O、分子量: 150.22
+- テスト試薬2：Pyrimidine derivative (CAS: 58-96-8)
+  - ✅ リストに追加成功
+  - ✅ テーブルに正常に表示
+  - 分子式: C9H12N2O6、分子量: 244.2
+- ✅ 削除ボタンが機能することを確認
+- ✅ 複数試薬の連続追加が正常に動作
 
 **今後の計画:**
 
