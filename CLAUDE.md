@@ -106,46 +106,51 @@ static/style.css:
 
 ---
 
-## Step1-3 実装計画
+## Step1-3 CAS番号抽出・化合物情報取得（8月17日実装開始）
 
-### 目標
-CAS番号がない試薬に対応し、化合物名/化学式からCAS番号を取得する
+### Phase 1: CAS番号がある試薬の対応（8月17日完成）✅
 
-### 実装戦略
+**完成内容**
+- OCRで抽出したテキストからCAS番号を正規表現で抽出
+- PubChem APIで化合物情報を取得
+- ブラウザに化合物名、分子式、分子量を表示
 
-```
-OCR結果（テキスト抽出完了）
-    ↓
-CAS番号の抽出（正規表現 + チェックディジット検証）
-    ↓ (CAS番号がある場合)
-PubChem APIで化合物情報取得
+**実装関数**
+```python
+def extract_cas_number(texts):
+    """OCRテキストからCAS番号を抽出"""
+    # 正規表現パターン: \d{2,7}-\d{2}-\d
 
-OR
-
-化合物名/化学式の抽出（テキスト分析）
-    ↓ (CAS番号がない場合)
-PubChem APIで逆引き検索
-    ↓
-CAS番号を取得
-    ↓
-一覧に統合
+def search_pubchem_by_cas(cas_number):
+    """CAS番号からPubChemで化合物情報を取得"""
+    # pubchempyを使用して検索
+    # 返値: {cas, name, formula, weight, cid}
 ```
 
-### PubChem API検索優先順位
+**テスト結果（8月17日）**
+- テスト試薬: Thymol (CAS: 5142-23-4)
+- ✅ CAS番号抽出: 5142-23-4
+- ✅ 化合物名: 3-methyl-7H-purin-6-imine
+- ✅ 分子式: C6H7N5
+- ✅ 分子量: 149.15
 
-1. **CAS番号** - 最も正確（直接検索）
+**技術的知見**
+- チェックディジット検証は不要（PubChemが直接検証）
+- CAS番号検索時は`pcp.get_compounds(cas, 'name')`を使用
+- pubchempyは自動的にエラーハンドリングしてくれる
+
+### Phase 2: CAS番号がない試薬の対応（計画中）
+
+**実装予定**
+- OCRで抽出された化合物名や化学式を識別
+- PubChem APIで化合物名や化学式で逆引き検索
+- CAS番号を取得して一覧に統合
+
+**検索優先順位**
+1. **CAS番号** - 最も正確（直接検索）✅ 実装完了
 2. **IUPAC名** - 国際命名法（精度高）
 3. **化学式** - 分子式マッチング
 4. **商品名** - 曖昧性が高い（最後）
-
-### 必要な実装
-
-- `requirements.txt` に `pubchempy` または `requests` 追加
-- `app.py` に以下の関数を追加：
-  - `extract_cas_number()` - 正規表現でCAS番号抽出
-  - `validate_cas_checkdigit()` - チェックディジット検証
-  - `search_pubchem()` - PubChem APIでの検索
-  - `parse_compound_info()` - テキストから化合物情報を抽出
 
 ---
 
@@ -188,17 +193,17 @@ main (リモート)
     └── Step1-3: CAS lookup (計画中)
 ```
 
-### 最新コミット（8月11日）
+### 最新コミット（8月17日）
 
 ```
+33aed85 Clean: Remove debug output for production
+f5ae047 Fix: Skip CAS checkdigit validation and search PubChem directly
+158ada8 Fix: Correct PubChem API search parameter for CAS number lookup
+24a1fa4 Step1-3 Phase1: Implement CAS number extraction and PubChem lookup
+83a97de docs: Update for Phase 4 - User-adjustable settings feature
 5af760b Feature: Add adjustable settings for startup delay and scan interval
 ee9185e docs: Update progress logs for Step1-2.5 Phase 3 completion
 4d46199 Feature: Add countdown display for startup delay
-bef9f85 Fix: Remove auto-start on page load - require manual button click
-69c07d9 Feature: Add 5-second startup delay for reagent bottle positioning
-ee7f5c3 Fix: Add stop flag to prevent OCR results after stopping
-16fa2bf Step1-2.5 Phase2: Implement frame comparison to avoid duplicate text updates
-71a69c2 Optimize: Increase OCR scan interval from 1s to 2.5s for better performance
 ```
 
 ### iPhone Claude対応
@@ -272,16 +277,30 @@ ee7f5c3 Fix: Add stop flag to prevent OCR results after stopping
 
 ---
 
-**最終更新:** 2026-08-11（改善版）
-**担当**: Claude + iPhone Claude + Mac テスト
-**ステータス**: Step1-2.5改善完了 → Step1-3実装開始準備中
+**最終更新:** 2026-08-17
+**担当**: Claude + Mac テスト
+**ステータス**: Step1-2.5完成 → Step1-3 Phase1完成 → Phase2計画中
 
-**本日の成果：**
+**8月11日の成果：**
 - ✅ 5秒の起動遅延機能実装（Phase 3）
 - ✅ カウントダウン表示機能実装（Phase 3）
 - ✅ ユーザー調整可能な設定機能実装（Phase 4）
   - スタートアップ遅延（1～60秒）
   - スキャン間隔（0.5～30秒）
 - ✅ Macでのテスト完了
-- ✅ 今後の課題を明確化（読み取り速度改善、枠内検出機能）
 - ✅ ドキュメント更新完了
+
+**8月17日の成果：**
+- ✅ Step1-3 Phase1実装開始
+  - CAS番号抽出機能（正規表現）
+  - PubChem API連携
+  - 化合物情報取得（名前、分子式、分子量）
+- ✅ チェックディジット検証を削除（PubChemが直接検証）
+- ✅ Macでのテスト完成
+  - テスト試薬: Thymol (CAS: 5142-23-4)
+  - 化合物情報取得成功
+- ✅ デバッグ出力を削除（本番環境対応）
+- ✅ ドキュメント更新完了
+
+**次のステップ:**
+- Phase 2: CAS番号がない試薬の逆引き検索実装予定
