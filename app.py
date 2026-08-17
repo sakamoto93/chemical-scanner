@@ -57,7 +57,39 @@ def search_pubchem_by_cas(cas_number):
                 "name": getattr(compound, 'iupac_name', 'N/A'),
                 "formula": getattr(compound, 'molecular_formula', 'N/A'),
                 "weight": getattr(compound, 'molecular_weight', 'N/A'),
-                "cid": compound.cid
+                "cid": compound.cid,
+                "source": "cas"
+            }
+    except Exception as e:
+        pass
+    return None
+
+def search_pubchem_by_name(compound_name):
+    """化合物名からPubChemで化合物情報を取得"""
+    try:
+        # 化合物名で検索
+        compounds = pcp.get_compounds(compound_name, 'name')
+
+        if compounds:
+            compound = compounds[0]
+            # CAS番号を取得
+            cas_number = 'N/A'
+            if hasattr(compound, 'cid'):
+                try:
+                    # PubChem APIから直接CAS番号を取得
+                    compound_data = pcp.get_compound(compound.cid, namespace='cid')
+                    if hasattr(compound_data, 'cas_number'):
+                        cas_number = compound_data.cas_number
+                except:
+                    pass
+
+            return {
+                "cas": cas_number,
+                "name": getattr(compound, 'iupac_name', compound_name),
+                "formula": getattr(compound, 'molecular_formula', 'N/A'),
+                "weight": getattr(compound, 'molecular_weight', 'N/A'),
+                "cid": compound.cid,
+                "source": "name"
             }
     except Exception as e:
         pass
@@ -133,8 +165,23 @@ async def perform_ocr(file: UploadFile = File(...)):
         compound_info = None
 
         if cas_number:
-            # PubChemで化合物情報を取得
+            # Phase 1: CAS番号で検索
             compound_info = search_pubchem_by_cas(cas_number)
+        else:
+            # Phase 2: 化合物名で検索（信頼度が高いテキストから順に試す）
+            # 信頼度でソート（降順）
+            sorted_texts = sorted(texts, key=lambda x: x['confidence'], reverse=True)
+
+            for text_obj in sorted_texts:
+                compound_name = text_obj['text']
+                confidence = text_obj['confidence']
+
+                # 信頼度が一定以上のテキストのみ検索
+                if confidence >= 0.85:
+                    result = search_pubchem_by_name(compound_name)
+                    if result:
+                        compound_info = result
+                        break
 
         return JSONResponse({
             "texts": texts,
