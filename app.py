@@ -47,29 +47,20 @@ def validate_cas_checkdigit(cas_number):
 def search_pubchem_by_cas(cas_number):
     """CAS番号からPubChemで化合物情報を取得"""
     try:
-        print(f"[DEBUG] Searching PubChem for CAS: {cas_number}")
-
         # CAS番号で検索（'name'パラメータを使用）
         compounds = pcp.get_compounds(cas_number, 'name')
-        print(f"[DEBUG] Found {len(compounds) if compounds else 0} compounds")
 
         if compounds:
             compound = compounds[0]
-            result = {
+            return {
                 "cas": cas_number,
                 "name": getattr(compound, 'iupac_name', 'N/A'),
                 "formula": getattr(compound, 'molecular_formula', 'N/A'),
                 "weight": getattr(compound, 'molecular_weight', 'N/A'),
                 "cid": compound.cid
             }
-            print(f"[DEBUG] Compound found: {result}")
-            return result
-        else:
-            print(f"[DEBUG] No compounds found for CAS: {cas_number}")
     except Exception as e:
-        import traceback
-        print(f"[ERROR] PubChem API Error for CAS {cas_number}: {e}")
-        print(traceback.format_exc())
+        pass
     return None
 
 def get_camera_frame():
@@ -142,8 +133,7 @@ async def perform_ocr(file: UploadFile = File(...)):
         compound_info = None
 
         if cas_number:
-            print(f"[DEBUG] Extracted CAS: {cas_number}")
-            # PubChemで化合物情報を取得（チェックディジット検証をスキップ）
+            # PubChemで化合物情報を取得
             compound_info = search_pubchem_by_cas(cas_number)
 
         return JSONResponse({
