@@ -139,17 +139,27 @@ def search_pubchem_by_cas(cas_number):
 - CAS番号検索時は`pcp.get_compounds(cas, 'name')`を使用
 - pubchempyは自動的にエラーハンドリングしてくれる
 
-### Phase 2: CAS番号がない試薬の対応（計画中）
+### Phase 2: CAS番号がない試薬の対応（8月17日完成） ✅
 
-**実装予定**
-- OCRで抽出された化合物名や化学式を識別
-- PubChem APIで化合物名や化学式で逆引き検索
-- CAS番号を取得して一覧に統合
+**完成内容**
+- OCRで抽出された高信頼度テキストから化合物名を抽出
+- PubChemで化合物名を検索
+- CAS番号を複数のソースから自動抽出
+  - IUPAC名フィールドから正規表現で抽出
+  - Synonymsフィールドから検索
+  - 詳細情報から抽出
 
-**検索優先順位**
-1. **CAS番号** - 最も正確（直接検索）✅ 実装完了
-2. **IUPAC名** - 国際命名法（精度高）
-3. **化学式** - 分子式マッチング
+**テスト結果（8月17日）**
+- テスト試薬: Thymol（化学名: 2-Isopropyl-5-methylphenol、日本語: チモール）
+- ✅ 化合物名「Thymol」から検索成功
+- ✅ CAS番号: 89-83-8 を自動取得
+- ✅ 分子式・分子量も取得
+- ✅ ブラウザに「検出方法: 化合物名から取得」と表示
+
+**検索優先順位（実装完了）**
+1. **CAS番号** - 最も正確（直接検索）✅ Phase1完成
+2. **化合物名** - 国際命名法またはOCR結果 ✅ Phase2完成
+3. **化学式** - 分子式マッチング（将来の実装）
 4. **商品名** - 曖昧性が高い（最後）
 
 ---
@@ -196,14 +206,14 @@ main (リモート)
 ### 最新コミット（8月17日）
 
 ```
+f2d80ca Fix: Improve CAS number extraction in reverse lookup
+f5f4d1d Step1-3 Phase2: Implement reverse lookup for compounds without CAS
+3d38e03 docs: Update for Step1-3 Phase1 completion
 33aed85 Clean: Remove debug output for production
 f5ae047 Fix: Skip CAS checkdigit validation and search PubChem directly
 158ada8 Fix: Correct PubChem API search parameter for CAS number lookup
 24a1fa4 Step1-3 Phase1: Implement CAS number extraction and PubChem lookup
 83a97de docs: Update for Phase 4 - User-adjustable settings feature
-5af760b Feature: Add adjustable settings for startup delay and scan interval
-ee9185e docs: Update progress logs for Step1-2.5 Phase 3 completion
-4d46199 Feature: Add countdown display for startup delay
 ```
 
 ### iPhone Claude対応
@@ -279,7 +289,7 @@ ee9185e docs: Update progress logs for Step1-2.5 Phase 3 completion
 
 **最終更新:** 2026-08-17
 **担当**: Claude + Mac テスト
-**ステータス**: Step1-2.5完成 → Step1-3 Phase1完成 → Phase2計画中
+**ステータス**: Step1-2.5完成 → Step1-3完成 → Step1-4計画中
 
 **8月11日の成果：**
 - ✅ 5秒の起動遅延機能実装（Phase 3）
@@ -291,16 +301,34 @@ ee9185e docs: Update progress logs for Step1-2.5 Phase 3 completion
 - ✅ ドキュメント更新完了
 
 **8月17日の成果：**
-- ✅ Step1-3 Phase1実装開始
-  - CAS番号抽出機能（正規表現）
-  - PubChem API連携
-  - 化合物情報取得（名前、分子式、分子量）
-- ✅ チェックディジット検証を削除（PubChemが直接検証）
+
+**Phase1完成：**
+- ✅ CAS番号抽出機能（正規表現）
+- ✅ PubChem API連携（CAS番号で直接検索）
+- ✅ 化合物情報取得（名前、分子式、分子量）
 - ✅ Macでのテスト完成
   - テスト試薬: Thymol (CAS: 5142-23-4)
+  - 化合物情報取得成功
+
+**Phase2完成：**
+- ✅ 化合物名での逆引き検索機能
+- ✅ 高信頼度テキスト（≥85%）を優先的に検索
+- ✅ CAS番号自動抽出（複数の方法で試行）
+  - IUPAC名フィールドから抽出
+  - Synonymsから抽出
+  - 詳細情報から抽出
+- ✅ 検出方法を区別して表示（CAS番号/化合物名）
+- ✅ Macでのテスト完成
+  - テスト試薬: Thymol（化合物名から検索）
+  - CAS番号: 89-83-8 を自動取得
   - 化合物情報取得成功
 - ✅ デバッグ出力を削除（本番環境対応）
 - ✅ ドキュメント更新完了
 
+**Step1-3実装完了** ✅
+- CAS番号がある試薬と、ない試薬の両方に対応
+- 自動的にCAS番号と化合物情報を取得・表示
+
 **次のステップ:**
-- Phase 2: CAS番号がない試薬の逆引き検索実装予定
+- Step1-4: 一覧表示機能（複数試薬の管理）
+- Step1-5: Excel出力機能
