@@ -125,3 +125,83 @@ h1 {
     border-radius: 4px;
     width: 100px;
 }
+
+#add-to-list-btn {
+    padding: 10px 20px;
+    font-size: 0.95em;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#add-to-list-btn:hover {
+    background-color: #0b7dda;
+}
+
+#add-to-list-btn:active {
+    background-color: #0056b3;
+}
+
+.compound-list {
+    margin-top: 30px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+}
+
+.compound-list h2 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.5em;
+}
+
+#compound-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#compound-table thead {
+    background-color: #f5f5f5;
+}
+
+#compound-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: bold;
+    color: #333;
+    border-bottom: 2px solid #ddd;
+}
+
+#compound-table td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+    color: #555;
+}
+
+#compound-table tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+.delete-btn {
+    padding: 6px 12px;
+    font-size: 0.85em;
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.delete-btn:hover {
+    background-color: #da190b;
+}
+
+.delete-btn:active {
+    background-color: #ba0000;
+}

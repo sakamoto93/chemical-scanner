@@ -31,6 +31,28 @@
         <div class="results">
             <h2>OCR結果</h2>
             <div id="ocr-results"></div>
+            <div id="add-to-list-container" style="display:none; margin-top: 15px;">
+                <button id="add-to-list-btn">リストに追加</button>
+            </div>
+        </div>
+        <div class="compound-list">
+            <h2>検出された試薬一覧</h2>
+            <table id="compound-table">
+                <thead>
+                    <tr>
+                        <th>CAS番号</th>
+                        <th>化合物名</th>
+                        <th>分子式</th>
+                        <th>分子量</th>
+                        <th>削除</th>
+                    </tr>
+                </thead>
+                <tbody id="compound-tbody">
+                </tbody>
+            </table>
+            <p id="empty-message" style="text-align: center; color: #999; padding: 20px;">
+                リストに試薬を追加してください
+            </p>
         </div>
     </div>
     <script>
@@ -39,6 +61,10 @@
         const ocrResults = document.getElementById('ocr-results');
         const startupDelayInput = document.getElementById('startup-delay');
         const scanIntervalInput = document.getElementById('scan-interval');
+        const addToListBtn = document.getElementById('add-to-list-btn');
+        const addToListContainer = document.getElementById('add-to-list-container');
+        const compoundTbody = document.getElementById('compound-tbody');
+        const emptyMessage = document.getElementById('empty-message');
 
         let isRunning = false;
         let intervalId = null;
@@ -47,6 +73,8 @@
         let shouldStop = false;
         let startupDelay = 5;
         let scanInterval = 2.5;
+        let currentCompoundInfo = null;
+        let compoundList = [];
 
         // 設定変更時のイベントリスナー
         startupDelayInput.addEventListener('change', () => {
@@ -57,9 +85,58 @@
             scanInterval = parseFloat(scanIntervalInput.value);
         });
 
+        // リスト追加ボタンのイベントリスナー
+        addToListBtn.addEventListener('click', addToList);
+
         // テキスト配列をJSON文字列に変換（比較用）
         function textsToString(texts) {
             return JSON.stringify(texts.map(item => item.text));
+        }
+
+        // リストにアイテムを追加
+        function addToList() {
+            if (!currentCompoundInfo) {
+                alert('追加する化合物情報がありません');
+                return;
+            }
+
+            const item = {
+                cas: currentCompoundInfo.cas || 'N/A',
+                name: currentCompoundInfo.name,
+                formula: currentCompoundInfo.formula,
+                weight: currentCompoundInfo.weight
+            };
+
+            compoundList.push(item);
+            updateCompoundTable();
+        }
+
+        // テーブルを更新
+        function updateCompoundTable() {
+            compoundTbody.innerHTML = '';
+
+            if (compoundList.length === 0) {
+                emptyMessage.style.display = 'block';
+            } else {
+                emptyMessage.style.display = 'none';
+                compoundList.forEach((item, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.cas}</td>
+                        <td>${item.name}</td>
+                        <td>${item.formula}</td>
+                        <td>${item.weight}</td>
+                        <td><button class="delete-btn" onclick="deleteFromList(${index})">削除</button></td>
+                    `;
+                    compoundTbody.appendChild(row);
+                });
+            }
+        }
+
+        // リストから削除
+        function deleteFromList(index) {
+            compoundList.splice(index, 1);
+            updateCompoundTable();
         }
 
         // OCR実行関数
@@ -120,6 +197,12 @@
                             html += `<p><strong>化合物名:</strong> ${data.compound_info.name}</p>`;
                             html += `<p><strong>分子式:</strong> ${data.compound_info.formula}</p>`;
                             html += `<p><strong>分子量:</strong> ${data.compound_info.weight}</p>`;
+
+                            currentCompoundInfo = data.compound_info;
+                            addToListContainer.style.display = 'block';
+                        } else {
+                            currentCompoundInfo = null;
+                            addToListContainer.style.display = 'none';
                         }
 
                         ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';
