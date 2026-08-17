@@ -142,10 +142,15 @@ async def perform_ocr(file: UploadFile = File(...)):
         compound_info = None
 
         if cas_number:
+            print(f"[DEBUG] Extracted CAS: {cas_number}")
             # チェックディジットを検証
-            if validate_cas_checkdigit(cas_number):
+            is_valid = validate_cas_checkdigit(cas_number)
+            print(f"[DEBUG] CAS validation result: {is_valid}")
+            if is_valid:
                 # PubChemで化合物情報を取得
                 compound_info = search_pubchem_by_cas(cas_number)
+            else:
+                print(f"[DEBUG] CAS checkdigit validation failed, skipping PubChem lookup")
 
         return JSONResponse({
             "texts": texts,
