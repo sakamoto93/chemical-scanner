@@ -47,7 +47,8 @@ def validate_cas_checkdigit(cas_number):
 def search_pubchem_by_cas(cas_number):
     """CAS番号からPubChemで化合物情報を取得"""
     try:
-        compounds = pcp.get_compounds(cas_number, 'cid')
+        # CAS番号で検索（'name'パラメータを使用）
+        compounds = pcp.get_compounds(cas_number, 'name')
         if compounds:
             compound = compounds[0]
             return {
@@ -58,7 +59,9 @@ def search_pubchem_by_cas(cas_number):
                 "cid": compound.cid
             }
     except Exception as e:
-        pass
+        import traceback
+        print(f"PubChem API Error for CAS {cas_number}: {e}")
+        print(traceback.format_exc())
     return None
 
 def get_camera_frame():
