@@ -72,14 +72,37 @@ def search_pubchem_by_name(compound_name):
 
         if compounds:
             compound = compounds[0]
-            # CAS番号を取得
+            # CAS番号を取得（複数の属性を試す）
             cas_number = 'N/A'
-            if hasattr(compound, 'cid'):
+
+            # 方法1: iupac_nameから抽出（CAS番号が含まれることがある）
+            if hasattr(compound, 'iupac_name'):
+                iupac = getattr(compound, 'iupac_name', '')
+                cas_match = re.search(r'\d{2,7}-\d{2}-\d', str(iupac))
+                if cas_match:
+                    cas_number = cas_match.group(0)
+
+            # 方法2: synonymsから抽出
+            if cas_number == 'N/A' and hasattr(compound, 'synonyms'):
                 try:
-                    # PubChem APIから直接CAS番号を取得
+                    for syn in compound.synonyms:
+                        syn_str = str(syn)
+                        cas_match = re.search(r'\d{2,7}-\d{2}-\d', syn_str)
+                        if cas_match:
+                            cas_number = cas_match.group(0)
+                            break
+                except:
+                    pass
+
+            # 方法3: CIDから詳細情報を取得
+            if cas_number == 'N/A' and hasattr(compound, 'cid'):
+                try:
                     compound_data = pcp.get_compound(compound.cid, namespace='cid')
-                    if hasattr(compound_data, 'cas_number'):
-                        cas_number = compound_data.cas_number
+                    if hasattr(compound_data, 'iupac_name'):
+                        iupac = getattr(compound_data, 'iupac_name', '')
+                        cas_match = re.search(r'\d{2,7}-\d{2}-\d', str(iupac))
+                        if cas_match:
+                            cas_number = cas_match.group(0)
                 except:
                     pass
 
