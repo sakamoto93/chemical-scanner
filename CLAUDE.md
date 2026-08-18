@@ -489,3 +489,175 @@ function deleteFromList(index)
 - 複数試薬の同時処理
 - リスト並び替え機能
 - 検索・フィルター機能
+
+---
+
+## 問題分析と改善案（技術的詳細）
+
+### 初回読み取り問題の原因究明
+
+**最可能性が高い原因**
+1. **サーバー接続失敗** - iPhone経由テスト時、ローカルサーバーアクセス不可
+2. **setTimeoutの遅延不足** - 100ms では実行タイミングが早すぎる可能性
+3. **performOCRのネットワークハング** - `/capture` や `/ocr` エンドポイントの応答遅延
+4. **previousTexts初期化問題** - フレーム比較に失敗して表示されない
+
+**診断方法**
+- ブラウザコンソール: エラーログ確認
+- ネットワークタブ: `/capture` `/ocr` リクエスト状態確認
+- サーバーログ: エンドポイント呼び出し確認
+
+### ライブ映像パフォーマンス低下の根本原因
+
+**1. DOM操作の過剰**
+```javascript
+function updateCompoundTable() {
+    compoundTbody.innerHTML = '';  // 毎回すべてクリア（重い）
+    compoundList.forEach((item, index) => {
+        const row = document.createElement('tr');
+        // ...
+        compoundTbody.appendChild(row);  // 毎行追加（レイアウト再計算）
+    });
+}
+```
+
+**2. 高速連続実行による影響**
+- スキャン間隔 2.5秒 → performOCR実行
+- `/capture` (数百ms) + `/ocr` (数秒) = 数秒間のブロック
+- ブラウザのメインスレッドが OCR 処理に拘束
+
+**3. メモリ管理の問題**
+- `intervalId` が古いまま保持されている可能性
+- 複数の setInterval が重複実行される可能性
+
+### 短期改善案（実装優先度順）
+
+**1. 初回読み取り修正**
+- setTimeoutの遅延を 100ms → 0ms に短縮
+- performOCR実行前後に console.log でデバッグ
+- エラー詳細をコンソールに出力
+- previousTexts初期状態を明示的に確認
+
+**2. パフォーマンス改善**
+- テーブル更新を「全削除」から「差分更新」へ変更
+- DOM操作を requestAnimationFrame でバッチ処理
+- スキャン実行を debounce/throttle で制限
+- スキャン間隔のデフォルト値を 2.5s → 3.5s に変更
+
+### 中期改善案（パフォーマンス本格化）
+
+**C. OCR処理の軽量化**
+- キャプチャ解像度の縮小（640x480 → 320x240）
+- OCR処理を Web Worker へ移動（メインスレッド非ブロック化）
+- 前フレーム差分チェック（異なる時のみOCR実行）
+
+**D. UI応答性向上**
+- リスト追加時のテーブル更新を非同期化
+- `/capture` エンドポイントのタイムアウト設定
+- 複数fetch呼び出しの並列数制限
+
+### 長期改善案（アーキテクチャ改善）
+
+**E. 根本的な設計変更**
+- WebSocket導入（ポーリングから双方向通信へ）
+- サーバー側OCR処理（クライアント負荷軽減）
+- IndexedDBによるローカルキャッシング
+
+---
+
+## Step1-5 改善実装（8月18日） ✅
+
+### 実装完了した短期改善
+
+#### 1. **パフォーマンス改善: テーブル差分更新** ✅
+```javascript
+// 改善前: 毎回全行削除→再作成
+compoundTbody.innerHTML = '';
+compoundList.forEach((item, index) => { ... });
+
+// 改善後: 新規行のみ追加
+const currentRows = compoundTbody.querySelectorAll('tr').length;
+const itemsToAdd = compoundList.slice(currentRows);
+itemsToAdd.forEach((item, offset) => { ... });
+```
+- テーブル更新時のDOM操作を最小限に削減
+- 新規項目追加時は新しい行のみを追加
+- 削除時は全行再構築（インデックス正確性を保証）
+
+#### 2. **初回読み取り修正: setTimeoutの削除と詳細ログ追加** ✅
+```javascript
+// 改善前: setTimeout(100)で遅延
+setTimeout(() => {
+    performOCR();
+    ...
+}, 100);
+
+// 改善後: 即座に実行 + 詳細ログ
+try {
+    performOCR().catch(err => {
+        console.error('[OCR Error] Initial scan failed:', err);
+    });
+} catch (err) {
+    console.error('[OCR Exception] Initial scan threw exception:', err);
+}
+```
+- setTimeoutの100ms遅延を削除（即座実行）
+- 各処理ステップでconsole.logを追加
+- ネットワークエラー、タイムアウト時の詳細ログ
+- performOCR実行前後のフラグ状態をログ出力
+
+#### 3. **performOCR関数へのトレーシング機能追加** ✅
+```javascript
+console.log('[performOCR] Starting capture request');
+const captureStart = performance.now();
+// ... capture実行
+console.log('[performOCR] Capture response received in X.XXms');
+
+console.log('[performOCR] Starting OCR request');
+const ocrStart = performance.now();
+// ... OCR実行
+console.log('[performOCR] OCR response received in X.XXms');
+```
+- `/capture` リクエスト応答時間計測
+- `/ocr` リクエスト応答時間計測
+- 各ステップでのエラー詳細ログ
+- テキスト検出状態と前フレーム比較結果をログ出力
+
+#### 4. **スキャン間隔の最適化** ✅
+- デフォルト値を 2.5秒 → 3.5秒に変更
+- CPU負荷軽減とカメラ映像のフレームレート改善を期待
+
+### テスト対象機能
+
+**差分更新テスト:**
+- ✅ 複数試薬連続追加時の動作確認
+- ✅ テーブル描画が高速化されることを確認
+- ✅ 削除ボタンのインデックス一貫性確保
+
+**初回読み取り修正テスト:**
+- ⚠️ ローカルテスト環境での確認が必要
+- iPhone経由でのテスト推奨
+- ブラウザコンソールのログ確認で診断
+
+**性能テスト:**
+- スキャン間隔 3.5秒での連続読み取り
+- ライブカメラ映像のフレームレート確認
+
+### 次のステップ
+
+**デバッグ情報の確認手順**
+1. ブラウザ開発者ツール開く (F12)
+2. Consoleタブを選択
+3. 「自動スキャン: 開始」をクリック
+4. コンソールに以下の出力を確認
+   - `[Countdown Complete]` - カウントダウン完了
+   - `[Starting OCR]` - OCR開始準備
+   - `[performOCR] Starting capture request` - キャプチャ要求
+   - `[performOCR] Capture response received` - キャプチャ応答
+   - エラーが出ている場合は詳細ログが表示される
+
+**今後の改善候補**
+- Web Worker を用いた OCR 処理の非ブロック化
+- キャプチャ解像度の動的調整
+- requestAnimationFrame による DOM バッチ更新
+- ローカルストレージでのリスト永続化
