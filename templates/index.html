@@ -103,12 +103,19 @@
             const item = {
                 cas: currentCompoundInfo.cas || 'N/A',
                 name: currentCompoundInfo.name,
+                commonName: currentCompoundInfo.commonName || '',
                 formula: currentCompoundInfo.formula,
                 weight: currentCompoundInfo.weight
             };
 
             compoundList.push(item);
             updateCompoundTable();
+
+            // リスト追加後にOCR結果をクリアしてスムーズに次のスキャンに進む
+            ocrResults.innerHTML = '<p>次の試薬を読み取り中...</p>';
+            currentCompoundInfo = null;
+            addToListContainer.style.display = 'none';
+            previousTexts = [];
         }
 
         // テーブルを更新
@@ -121,9 +128,10 @@
                 emptyMessage.style.display = 'none';
                 compoundList.forEach((item, index) => {
                     const row = document.createElement('tr');
+                    const displayName = item.commonName ? `${item.name}<br/><small>(${item.commonName})</small>` : item.name;
                     row.innerHTML = `
                         <td>${item.cas}</td>
-                        <td>${item.name}</td>
+                        <td>${displayName}</td>
                         <td>${item.formula}</td>
                         <td>${item.weight}</td>
                         <td><button class="delete-btn" onclick="deleteFromList(${index})">削除</button></td>
@@ -195,10 +203,16 @@
                                 }
                             }
                             html += `<p><strong>化合物名:</strong> ${data.compound_info.name}</p>`;
+                            if (data.compound_info.common_name) {
+                                html += `<p><strong>通称名:</strong> ${data.compound_info.common_name}</p>`;
+                            }
                             html += `<p><strong>分子式:</strong> ${data.compound_info.formula}</p>`;
                             html += `<p><strong>分子量:</strong> ${data.compound_info.weight}</p>`;
 
-                            currentCompoundInfo = data.compound_info;
+                            currentCompoundInfo = {
+                                ...data.compound_info,
+                                commonName: data.compound_info.common_name || ''
+                            };
                             addToListContainer.style.display = 'block';
                         } else {
                             currentCompoundInfo = null;
@@ -242,11 +256,20 @@
                         clearInterval(countdownInterval);
                         if (isRunning) {
                             statusEl.textContent = '実行中...';
+                            shouldStop = false; // 確実に停止フラグを下ろす
                             // 初回は即座に実行
-                            performOCR();
-
-                            // スキャン間隔（秒）で実行
-                            intervalId = setInterval(performOCR, scanInterval * 1000);
+                            setTimeout(() => {
+                                if (isRunning && !shouldStop) {
+                                    performOCR();
+                                    // スキャン間隔（秒）で実行
+                                    if (intervalId) clearInterval(intervalId);
+                                    intervalId = setInterval(() => {
+                                        if (isRunning && !shouldStop) {
+                                            performOCR();
+                                        }
+                                    }, scanInterval * 1000);
+                                }
+                            }, 100);
                         }
                     }
                 }, 1000);

@@ -44,6 +44,25 @@ def validate_cas_checkdigit(cas_number):
     except:
         return False
 
+def extract_common_name(compound):
+    """synonymsから通称名を抽出（日本語または簡潔な名前を優先）"""
+    try:
+        if hasattr(compound, 'synonyms') and compound.synonyms:
+            # 日本語名またはカタカナ名を探す
+            for syn in compound.synonyms:
+                syn_str = str(syn)
+                # 日本語またはカタカナが含まれているか確認
+                if any('぀' <= c <= 'ゟ' or '゠' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in syn_str):
+                    return syn_str
+            # 見つからない場合は、最初の同義語（短いもの）を返す
+            for syn in compound.synonyms:
+                syn_str = str(syn)
+                if len(syn_str) < 50 and syn_str.lower() != getattr(compound, 'iupac_name', '').lower():
+                    return syn_str
+    except Exception as e:
+        pass
+    return ''
+
 def search_pubchem_by_cas(cas_number):
     """CAS番号からPubChemで化合物情報を取得"""
     try:
@@ -55,6 +74,7 @@ def search_pubchem_by_cas(cas_number):
             return {
                 "cas": cas_number,
                 "name": getattr(compound, 'iupac_name', 'N/A'),
+                "common_name": extract_common_name(compound),
                 "formula": getattr(compound, 'molecular_formula', 'N/A'),
                 "weight": getattr(compound, 'molecular_weight', 'N/A'),
                 "cid": compound.cid,
@@ -109,6 +129,7 @@ def search_pubchem_by_name(compound_name):
             return {
                 "cas": cas_number,
                 "name": getattr(compound, 'iupac_name', compound_name),
+                "common_name": extract_common_name(compound),
                 "formula": getattr(compound, 'molecular_formula', 'N/A'),
                 "weight": getattr(compound, 'molecular_weight', 'N/A'),
                 "cid": compound.cid,
