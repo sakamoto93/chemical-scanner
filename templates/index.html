@@ -76,6 +76,7 @@
         let currentCompoundInfo = null;
         let compoundList = [];
         let isOCRProcessing = false;  // OCR処理中フラグ（同時実行防止）
+        let pendingStart = false;  // OCR完了後に開始を待っているフラグ
 
         // 設定変更時のイベントリスナー
         startupDelayInput.addEventListener('change', () => {
@@ -307,12 +308,51 @@
                 // 必ずフラグを下ろす（成功時・エラー時の両方）
                 isOCRProcessing = false;
                 console.log('[performOCR] Processing flag cleared');
+
+                // OCR完了後に次のスキャンが待っている場合は自動実行
+                if (pendingStart && isRunning) {
+                    console.log('[performOCR] Pending start detected, initiating next scan');
+                    pendingStart = false;
+                    // 次のスキャンをスケジュール
+                    clearInterval(intervalId);
+                    clearInterval(countdownInterval);
+
+                    let countdown = startupDelay;
+                    statusEl.textContent = countdown + '秒後に開始...';
+                    countdownInterval = setInterval(() => {
+                        countdown--;
+                        if (countdown > 0) {
+                            statusEl.textContent = countdown + '秒後に開始...';
+                        } else {
+                            clearInterval(countdownInterval);
+                            if (isRunning) {
+                                statusEl.textContent = '実行中...';
+                                shouldStop = false;
+                                previousTexts = [];
+                                console.log('[Queued Scan] Starting from pending state');
+                                try {
+                                    performOCR().catch(err => {
+                                        console.error('[OCR Error] Queued scan failed:', err);
+                                    });
+                                } catch (err) {
+                                    console.error('[OCR Exception] Queued scan threw exception:', err);
+                                }
+                            }
+                        }
+                    }, 1000);
+                }
             }
         }
 
         // ボタンクリックで開始/停止
         captureBtn.addEventListener('click', () => {
             if (isRunning) {
+                // OCR処理中は停止せず、次スキャンをキューに入れる
+                if (isOCRProcessing) {
+                    console.log('[Button Click] OCR processing in progress, queuing next start');
+                    pendingStart = true;
+                    return;  // ここでは何もしない
+                }
                 // 停止
                 clearInterval(intervalId);
                 clearInterval(countdownInterval);
