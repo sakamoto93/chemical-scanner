@@ -117,6 +117,8 @@
             currentCompoundInfo = null;
             addToListContainer.style.display = 'none';
             previousTexts = [];
+            shouldStop = false;  // 次のスキャン開始のため shouldStop をリセット
+            console.log('[addToList] State reset: previousTexts cleared, shouldStop=false');
         }
 
         // テーブルを更新（差分更新による高速化）
