@@ -53,6 +53,10 @@
             <p id="empty-message" style="text-align: center; color: #999; padding: 20px;">
                 リストに試薬を追加してください
             </p>
+            <div id="export-buttons" style="text-align: center; padding: 20px; display: none;">
+                <button id="export-excel-btn" style="margin-right: 10px; padding: 10px 20px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">Excelダウンロード</button>
+                <button id="export-csv-btn" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">CSVダウンロード</button>
+            </div>
         </div>
     </div>
     <script>
@@ -65,6 +69,9 @@
         const addToListContainer = document.getElementById('add-to-list-container');
         const compoundTbody = document.getElementById('compound-tbody');
         const emptyMessage = document.getElementById('empty-message');
+        const exportButtons = document.getElementById('export-buttons');
+        const exportExcelBtn = document.getElementById('export-excel-btn');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
 
         let isRunning = false;
         let intervalId = null;
@@ -89,6 +96,10 @@
 
         // リスト追加ボタンのイベントリスナー
         addToListBtn.addEventListener('click', addToList);
+
+        // エクスポートボタンのイベントリスナー
+        exportExcelBtn.addEventListener('click', () => exportList('excel'));
+        exportCsvBtn.addEventListener('click', () => exportList('csv'));
 
         // テキスト配列をJSON文字列に変換（比較用）
         function textsToString(texts) {
@@ -127,8 +138,10 @@
             if (compoundList.length === 0) {
                 compoundTbody.innerHTML = '';
                 emptyMessage.style.display = 'block';
+                exportButtons.style.display = 'none';
             } else {
                 emptyMessage.style.display = 'none';
+                exportButtons.style.display = 'block';
                 // 現在の行数と比較して、不足分のみ追加
                 const currentRows = compoundTbody.querySelectorAll('tr').length;
                 const itemsToAdd = compoundList.slice(currentRows);
@@ -187,6 +200,65 @@
                     `;
                     compoundTbody.appendChild(row);
                 });
+            }
+        }
+
+        // リストをエクスポート
+        async function exportList(format) {
+            if (compoundList.length === 0) {
+                alert('エクスポートする試薬データがありません');
+                return;
+            }
+
+            try {
+                // 現在のリストをサーバーに送信
+                const response = await fetch(`/export/${format}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        compounds: compoundList.map(item => ({
+                            cas: item.cas,
+                            name: item.name,
+                            commonName: item.commonName,
+                            formula: item.formula,
+                            weight: item.weight,
+                            source: 'unknown'  // 各試薬の検出方法を記録していないため 'unknown'
+                        }))
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Export failed with status ${response.status}`);
+                }
+
+                // ダウンロード
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+
+                // ファイル名を取得（Content-Dispositionから）
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = format === 'excel' ? 'chemical_list.xlsx' : 'chemical_list.csv';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
+                }
+
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+
+                console.log(`[Export] ${format.toUpperCase()} exported: ${filename}`);
+            } catch (error) {
+                console.error('[Export Error]', error);
+                alert(`エクスポートに失敗しました: ${error.message}`);
             }
         }
 

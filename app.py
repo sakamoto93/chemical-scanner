@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import cv2
 import numpy as np
@@ -8,6 +8,10 @@ import io
 from PIL import Image
 import re
 import time
+import csv
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 import pubchempy as pcp
 
 app = FastAPI()
@@ -251,6 +255,106 @@ async def perform_ocr(file: UploadFile = File(...)):
             "cas_number": cas_number,
             "compound_info": compound_info
         })
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
+
+@app.post("/export/excel")
+async def export_excel(data: dict):
+    """リスト内容をExcelファイルとして返却"""
+    try:
+        compounds = data.get("compounds", [])
+
+        # Workbookを作成
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Compounds"
+
+        # ヘッダーを作成
+        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名"]
+        ws.append(headers)
+
+        # ヘッダーのスタイルを設定（青背景、白文字、太字）
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # データを追加
+        for compound in compounds:
+            cas = compound.get("cas", "N/A")
+            name = compound.get("name", "N/A")
+            source = compound.get("source", "不明")
+            source_text = "CAS番号から取得" if source == "cas" else "化合物名から取得"
+            formula = compound.get("formula", "N/A")
+            weight = compound.get("weight", "N/A")
+            common_name = compound.get("commonName", "")
+
+            ws.append([cas, name, source_text, formula, weight, common_name])
+
+        # 列幅を自動調整
+        column_widths = [15, 50, 15, 15, 12, 20]
+        for idx, width in enumerate(column_widths, 1):
+            ws.column_dimensions[chr(64 + idx)].width = width
+
+        # ファイルをメモリに保存
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # タイムスタンプ付きファイル名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chemical_list_{timestamp}.xlsx"
+
+        return FileResponse(
+            io.BytesIO(output.getvalue()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=filename
+        )
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
+
+@app.post("/export/csv")
+async def export_csv(data: dict):
+    """リスト内容をCSVとして返却"""
+    try:
+        compounds = data.get("compounds", [])
+
+        # CSVをメモリに作成
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # ヘッダーを書き込み
+        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名"]
+        writer.writerow(headers)
+
+        # データを書き込み
+        for compound in compounds:
+            cas = compound.get("cas", "N/A")
+            name = compound.get("name", "N/A")
+            source = compound.get("source", "不明")
+            source_text = "CAS番号から取得" if source == "cas" else "化合物名から取得"
+            formula = compound.get("formula", "N/A")
+            weight = compound.get("weight", "N/A")
+            common_name = compound.get("commonName", "")
+
+            writer.writerow([cas, name, source_text, formula, weight, common_name])
+
+        csv_content = output.getvalue()
+
+        # タイムスタンプ付きファイル名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chemical_list_{timestamp}.csv"
+
+        return FileResponse(
+            io.BytesIO(csv_content.encode('utf-8-sig')),  # BOM付きUTF-8
+            media_type="text/csv; charset=utf-8",
+            filename=filename
+        )
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)

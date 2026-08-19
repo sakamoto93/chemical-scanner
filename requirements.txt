@@ -5,3 +5,4 @@ opencv-python==4.8.1.78
 numpy<2
 paddleocr>=2.7.0.3
 pubchempy>=1.0.4
+openpyxl>=3.0.0
