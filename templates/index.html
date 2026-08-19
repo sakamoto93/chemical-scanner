@@ -25,7 +25,7 @@
             </div>
             <div class="setting-group">
                 <label for="scan-interval">スキャン間隔（秒）:</label>
-                <input type="number" id="scan-interval" value="3.5" min="0.5" max="30" step="0.5">
+                <input type="number" id="scan-interval" value="8.0" min="0.5" max="30" step="0.5">
             </div>
         </div>
         <div class="results">
@@ -72,9 +72,10 @@
         let previousTexts = [];
         let shouldStop = false;
         let startupDelay = 5;
-        let scanInterval = 3.5;
+        let scanInterval = 8.0;  // デフォルト8秒（OCR処理時間5-6秒 + バッファ）
         let currentCompoundInfo = null;
         let compoundList = [];
+        let isOCRProcessing = false;  // OCR処理中フラグ（同時実行防止）
 
         // 設定変更時のイベントリスナー
         startupDelayInput.addEventListener('change', () => {
@@ -194,6 +195,13 @@
                 return;
             }
 
+            // OCR処理中は次のスキャンをスキップ（同時実行防止）
+            if (isOCRProcessing) {
+                console.log('[performOCR] Skipped: OCR processing already in progress');
+                return;
+            }
+
+            isOCRProcessing = true;
             console.log('[performOCR] Starting capture request');
             try {
                 const captureStart = performance.now();
@@ -293,6 +301,10 @@
             } catch (error) {
                 console.error('[performOCR] Exception caught:', error.message, error.stack);
                 ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            } finally {
+                // 必ずフラグを下ろす（成功時・エラー時の両方）
+                isOCRProcessing = false;
+                console.log('[performOCR] Processing flag cleared');
             }
         }
 
