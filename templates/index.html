@@ -340,7 +340,8 @@
                         if (isRunning) {
                             statusEl.textContent = '実行中...';
                             shouldStop = false;
-                            console.log('[Starting OCR] About to call performOCR, flags set to isRunning=true, shouldStop=false');
+                            previousTexts = [];  // 新規スキャン時にテキスト履歴をリセット
+                            console.log('[Starting OCR] About to call performOCR, flags set to isRunning=true, shouldStop=false, previousTexts cleared');
 
                             // 初回は即座に実行（setTimeoutなし）
                             try {
