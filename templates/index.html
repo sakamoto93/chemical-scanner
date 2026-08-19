@@ -347,19 +347,15 @@
         // ボタンクリックで開始/停止
         captureBtn.addEventListener('click', () => {
             if (isRunning) {
-                // OCR処理中は停止せず、次スキャンをキューに入れる
-                if (isOCRProcessing) {
-                    console.log('[Button Click] OCR processing in progress, queuing next start');
-                    pendingStart = true;
-                    return;  // ここでは何もしない
-                }
-                // 停止
+                // 停止（常に即座に実行）
                 clearInterval(intervalId);
                 clearInterval(countdownInterval);
                 shouldStop = true; // 停止フラグを立てる
                 isRunning = false;
+                pendingStart = false;  // ペンディング開始をクリア
                 captureBtn.textContent = '自動スキャン: 開始';
                 statusEl.textContent = '停止中';
+                console.log('[Button Click] Stop button pressed - system stopped, pendingStart cleared');
             } else {
                 // 開始
                 shouldStop = false; // 停止フラグを下ろす
