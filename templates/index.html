@@ -76,7 +76,7 @@
         let currentCompoundInfo = null;
         let compoundList = [];
         let isOCRProcessing = false;  // OCR処理中フラグ（同時実行防止）
-        let pendingStart = false;  // OCR完了後に開始を待っているフラグ
+        let scanGeneration = 0;  // 開始/停止のたびに増加。古い世代のOCR結果を破棄するために使用
 
         // 設定変更時のイベントリスナー
         startupDelayInput.addEventListener('change', () => {
@@ -192,6 +192,9 @@
 
         // OCR実行関数
         async function performOCR() {
+            // このスキャンが属する世代を記録（停止・再開のたびに scanGeneration が変わる）
+            const myGeneration = scanGeneration;
+
             // 停止フラグが立っている場合は実行しない
             if (shouldStop) {
                 console.log('[performOCR] Skipped: shouldStop is true');
@@ -205,7 +208,7 @@
             }
 
             isOCRProcessing = true;
-            console.log('[performOCR] Starting capture request');
+            console.log('[performOCR] Starting capture request (generation', myGeneration, ')');
             try {
                 const captureStart = performance.now();
                 const response = await fetch('/capture');
@@ -238,9 +241,9 @@
                 const data = await ocrResponse.json();
                 console.log('[performOCR] OCR data parsed, texts count:', data.texts ? data.texts.length : 0);
 
-                // 停止中に処理が完了した場合は表示しない
-                if (shouldStop) {
-                    console.log('[performOCR] Processing cancelled: shouldStop is true');
+                // 停止中、または停止→再開により世代が変わった場合は古い結果を破棄
+                if (shouldStop || myGeneration !== scanGeneration) {
+                    console.log('[performOCR] Processing cancelled: shouldStop =', shouldStop, ', generation', myGeneration, 'vs current', scanGeneration);
                     return;
                 }
 
@@ -303,44 +306,13 @@
                 console.log('[performOCR] Completed successfully');
             } catch (error) {
                 console.error('[performOCR] Exception caught:', error.message, error.stack);
-                ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+                if (myGeneration === scanGeneration) {
+                    ocrResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+                }
             } finally {
                 // 必ずフラグを下ろす（成功時・エラー時の両方）
                 isOCRProcessing = false;
                 console.log('[performOCR] Processing flag cleared');
-
-                // OCR完了後に次のスキャンが待っている場合は自動実行
-                if (pendingStart && isRunning) {
-                    console.log('[performOCR] Pending start detected, initiating next scan');
-                    pendingStart = false;
-                    // 次のスキャンをスケジュール
-                    clearInterval(intervalId);
-                    clearInterval(countdownInterval);
-
-                    let countdown = startupDelay;
-                    statusEl.textContent = countdown + '秒後に開始...';
-                    countdownInterval = setInterval(() => {
-                        countdown--;
-                        if (countdown > 0) {
-                            statusEl.textContent = countdown + '秒後に開始...';
-                        } else {
-                            clearInterval(countdownInterval);
-                            if (isRunning) {
-                                statusEl.textContent = '実行中...';
-                                shouldStop = false;
-                                previousTexts = [];
-                                console.log('[Queued Scan] Starting from pending state');
-                                try {
-                                    performOCR().catch(err => {
-                                        console.error('[OCR Error] Queued scan failed:', err);
-                                    });
-                                } catch (err) {
-                                    console.error('[OCR Exception] Queued scan threw exception:', err);
-                                }
-                            }
-                        }
-                    }, 1000);
-                }
             }
         }
 
@@ -348,19 +320,21 @@
         captureBtn.addEventListener('click', () => {
             if (isRunning) {
                 // 停止（常に即座に実行）
+                scanGeneration++;  // 進行中のOCR結果を無効化（古い世代として破棄）
                 clearInterval(intervalId);
                 clearInterval(countdownInterval);
                 shouldStop = true; // 停止フラグを立てる
                 isRunning = false;
-                pendingStart = false;  // ペンディング開始をクリア
                 captureBtn.textContent = '自動スキャン: 開始';
-                statusEl.textContent = '停止中';
-                console.log('[Button Click] Stop button pressed - system stopped, pendingStart cleared');
+                statusEl.textContent = '停止しました';
+                console.log('[Button Click] Stop button pressed - system stopped, generation now', scanGeneration);
             } else {
                 // 開始
+                scanGeneration++;  // 新しいセッション。古い世代の結果は無効化される
                 shouldStop = false; // 停止フラグを下ろす
                 isRunning = true;
                 captureBtn.textContent = '自動スキャン: 停止';
+                console.log('[Button Click] Start button pressed, generation now', scanGeneration);
 
                 // カウントダウン処理
                 let countdown = startupDelay;
