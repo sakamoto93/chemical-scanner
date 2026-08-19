@@ -7,10 +7,23 @@ from paddleocr import PaddleOCR
 import io
 from PIL import Image
 import re
+import time
 import pubchempy as pcp
 
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
+
+MAX_OCR_DIMENSION = 1200  # OCR処理時間短縮のため、長辺をこのサイズに制限
+
+def resize_for_ocr(image_array, max_dimension=MAX_OCR_DIMENSION):
+    """OCR処理速度向上のため画像をリサイズ（長辺が max_dimension を超える場合のみ縮小）"""
+    height, width = image_array.shape[:2]
+    longer_side = max(height, width)
+    if longer_side <= max_dimension:
+        return image_array
+    scale = max_dimension / longer_side
+    new_size = (int(width * scale), int(height * scale))
+    return cv2.resize(image_array, new_size, interpolation=cv2.INTER_AREA)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -189,8 +202,14 @@ async def perform_ocr(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         image_array = np.array(image)
+        original_shape = image_array.shape[:2]
+        image_array = resize_for_ocr(image_array)
 
+        ocr_start = time.time()
         result = ocr.ocr(image_array)
+        ocr_elapsed = time.time() - ocr_start
+        print(f"[OCR Benchmark] Image resized {original_shape} -> {image_array.shape[:2]}, "
+              f"ocr.ocr() took {ocr_elapsed:.2f}s")
 
         texts = []
         if result and isinstance(result, list) and len(result) > 0:
