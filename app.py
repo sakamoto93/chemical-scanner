@@ -311,7 +311,7 @@ async def export_excel(data: dict):
 
         return StreamingResponse(
             iter([output.getvalue()]),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
