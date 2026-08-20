@@ -71,14 +71,44 @@ def extract_common_name(compound):
                 # 日本語またはカタカナが含まれているか確認
                 if any('぀' <= c <= 'ゟ' or '゠' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in syn_str):
                     return syn_str
-            # 見つからない場合は、最初の同義語（短いもの）を返す
+            # 見つからない場合は、ノイズを除外しながら最初の有効な同義語を返す
             for syn in compound.synonyms:
-                syn_str = str(syn)
+                syn_str = str(syn).strip()
+
+                # 除外条件：ノイズとみなされるパターン
+                if is_noise_name(syn_str):
+                    continue
+
+                # 有効な候補：50文字以下で、IUPAC名と異なる
                 if len(syn_str) < 50 and syn_str.lower() != getattr(compound, 'iupac_name', '').lower():
                     return syn_str
     except Exception as e:
         pass
     return ''
+
+def is_noise_name(name):
+    """通称名がノイズ（製品情報、カタログ番号など）かどうかを判定"""
+    # CAS番号パターン（xx-xx-x）
+    if re.search(r'\d{2,7}-\d{2}-\d(?!\w)', name):
+        return True
+    # EC番号パターン（xxx-xxx-x）
+    if re.search(r'\d{3}-\d{3}-\d', name):
+        return True
+    # グラム数などの単位表記（数字 + 単位）
+    if re.search(r'\d+\s*(g|kg|mg|µg|ml|l|mol)\b', name, re.IGNORECASE):
+        return True
+    # データベースID接頭辞（NSC-, SCHEMBL, DTXSID, MFCD, CHEBI, PUBCHEM など）
+    if re.match(r'^(NSC|SCHEMBL|DTXSID|MFCD|CHEBI|PUBCHEM|EC|UNII|EINECS)-', name, re.IGNORECASE):
+        return True
+    # 純粋に数字だけ（カタログ番号など）
+    if re.match(r'^\d+(-\d+)*$', name):
+        return True
+    # 括弧内のパッケージサイズ情報（括弧が50%以上を占める）
+    paren_count = name.count('(') + name.count(')')
+    if paren_count > 2 or (len(name) > 20 and paren_count / len(name) > 0.3):
+        return True
+
+    return False
 
 def search_pubchem_by_cas(cas_number):
     """CAS番号からPubChemで化合物情報を取得"""
