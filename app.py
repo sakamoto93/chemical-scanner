@@ -309,10 +309,10 @@ async def export_excel(data: dict):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"chemical_list_{timestamp}.xlsx"
 
-        return FileResponse(
-            io.BytesIO(output.getvalue()),
+        return StreamingResponse(
+            iter([output.getvalue()]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename=filename
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
         import traceback
@@ -350,10 +350,10 @@ async def export_csv(data: dict):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"chemical_list_{timestamp}.csv"
 
-        return FileResponse(
-            io.BytesIO(csv_content.encode('utf-8-sig')),  # BOM付きUTF-8
+        return StreamingResponse(
+            iter([csv_content.encode('utf-8-sig')]),
             media_type="text/csv; charset=utf-8",
-            filename=filename
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
         import traceback
