@@ -884,3 +884,70 @@ async function exportList(format) {
 - Step1-5 Phase2（リスト永続化・ソート機能）
 - Step1-7（通称名改善、検索機能など）
 - Step2（既存Excel台帳との互換化）
+
+---
+
+## 本日の作業（8月20日） - エクスポート機能バグ修正
+
+### 実装完了した修正
+
+#### 1. **openpyxl モジュールのインストール** ✅
+- `ModuleNotFoundError: No module named 'openpyxl'` を解決
+- 実行環境とローカルMac環境の両方で `pip install -r requirements.txt` を実行
+- openpyxl 3.1.5 と依存パッケージ (et-xmlfile 2.0.0) を正常にインストール
+
+#### 2. **エクスポート機能のサーバーエラー修正** ✅
+**問題**: CSV/Excel エクスポート時に `500 Internal Server Error` が発生
+**原因**: `FileResponse` で `BytesIO` オブジェクトを直接取り扱っていた
+**修正**:
+```python
+# 修正前: FileResponse(io.BytesIO(output.getvalue()), ...)
+# 修正後: StreamingResponse(iter([output.getvalue()]), ...)
+```
+- `FileResponse` から `StreamingResponse` に変更
+- `Content-Disposition` ヘッダーで正しくファイル名を設定
+- **結果**: CSV ファイルのダウンロード成功 ✅
+
+#### 3. **Excel ファイル Chrome セキュリティ対応** ✅
+**問題**: Excel ファイルが「安全でないダウンロード」としてブロック
+**原因**: MIME タイプ `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` が Chrome の実行可能ファイル検知機能に引っかかっていた
+**修正**:
+```python
+# 修正前: media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+# 修正後: media_type="application/octet-stream"
+```
+- MIME タイプを汎用バイナリ形式に変更
+- **結果**: Chrome で「保存」ボタンを押すことで正常にダウンロード可能 ✅
+
+### テスト結果
+
+- ✅ CSV ファイル: 正常にダウンロード可能
+- ✅ Excel ファイル: 警告が表示されるが保存ボタンで正常にダウンロード可能
+- ✅ ファイル内容: 正しい形式とデータで保存されていることを確認
+- ✅ 日本語テキスト: BOM 付き UTF-8 で正しく表示
+
+### 実装したコミット
+
+- `5d199cb` Fix: Use StreamingResponse for export endpoints instead of FileResponse
+- `80999b6` Fix: Change Excel MIME type to application/octet-stream for Chrome compatibility
+
+### ステータス
+
+- **Step1-6 エクスポート機能**: バグ修正完了 ✅
+  - openpyxl インストール ✅
+  - FileResponse → StreamingResponse への修正 ✅
+  - Chrome セキュリティ対応 ✅
+  - CSV ダウンロード ✅
+  - Excel ダウンロード ✅（保存ボタンで確認可能）
+
+### 次のステップ
+
+**優先度：最高（次回実装）**
+1. **通称名（日本語名など）の項目選択改善**
+   - 現在: PubChemのsynonymsから随時選択される
+   - 問題: グラム数など違う項目が誤選択される場合がある
+   - 改善案: より正確な日本語名検出ロジック、または複数の候補から選択できるUI
+
+2. **Step1-5 Phase2: リスト管理の拡張**
+   - ローカルストレージでのリスト永続化
+   - リストの並び替え機能（CAS番号、化合物名でソート）
