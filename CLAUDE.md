@@ -1058,3 +1058,241 @@ def is_noise_name(name):
 
 **最終更新:** 2026-08-21
 **ステータス**: Step1 ほぼ完成 ✅ → Step2 計画中（リスクアセスメント統合） 📋
+
+---
+
+## iPhone Web App 実装ガイド（準備中 - 来週実装予定）
+
+### 実装概要
+
+現在のアーキテクチャは **iPhone Web App対応** の設計になっています。以下の実装で iPhone Safari からアクセス可能になります。
+
+```
+┌─────────────────────────┐
+│   iPhone Safari         │ ← ブラウザUI（変更なし）
+│   HTML/JavaScript       │
+└───────────┬─────────────┘
+            │ HTTP通信
+┌───────────▼─────────────┐
+│  MacBook FastAPI        │
+│  /capture, /ocr         │
+│  PaddleOCR サーバー     │
+└─────────────────────────┘
+     (Wi-Fi接続)
+```
+
+### Phase1: ローカルネットワーク接続テスト（推奨：来週月曜日）
+
+**目的**: Wi-Fi経由でiPhoneからMacのサーバーにアクセス可能か確認
+
+#### 1.1 MacBook でサーバー起動
+
+```bash
+cd /Volumes/mac移動用/化学物質管理
+conda activate chemical-scanner
+python app.py
+```
+
+**出力例**:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+#### 1.2 MacBook の IP アドレス確認
+
+```bash
+# ターミナルで実行
+ifconfig | grep "inet 192"
+```
+
+**出力例**:
+```
+inet 192.168.1.100 netmask 0xffffff00 broadcast 192.168.1.255
+```
+👉 `192.168.1.100` がMacのIPアドレス
+
+#### 1.3 iPhone Safari でアクセス
+
+1. **iPhone を Wi-Fi に接続**（MacBook と同じネットワーク）
+2. **Safari を開く**
+3. **アドレスバーに入力**: `http://192.168.1.100:8000`
+   - 例：`http://192.168.x.x:8000` （x.x は確認したIP）
+4. **Enter キーで接続**
+
+#### 1.4 動作確認チェックリスト
+
+- [ ] ページが読み込まれる
+- [ ] ライブカメラ映像が表示される
+- [ ] iPhone のカメラアクセス許可ダイアログが出現
+- [ ] 許可をタップするとカメラが有効化される
+- [ ] 「自動スキャン: 開始」ボタンをタップできる
+- [ ] OCR 結果が表示される
+- [ ] リストに追加・削除ができる
+
+**トラブル時の対応:**
+- ❌ 「接続できません」 → IP アドレスを確認、MacBook サーバーが起動しているか確認
+- ❌ 「プライベートネットワークへのアクセスが必要」 → iOSの許可ダイアログを承認
+- ❌ カメラが起動しない → Safari 設定で カメラ許可を確認
+
+---
+
+### Phase2: HTTPS 対応（オプション - セキュリティ強化）
+
+**必要なケース**: iOS 14.5以降で、より安全な接続が必要な場合
+
+#### 2.1 自己署名証明書の生成
+
+MacBook のターミナルで実行：
+
+```bash
+cd /Volumes/mac移動用/化学物質管理
+
+# 秘密鍵と証明書を生成（有効期間365日）
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -out cert.pem -keyout key.pem -days 365 \
+  -subj "/C=JP/ST=Tokyo/L=Tokyo/O=Lab/CN=192.168.1.100"
+```
+
+**出力**:
+- `cert.pem` - 証明書ファイル
+- `key.pem` - 秘密鍵ファイル
+
+#### 2.2 app.py を修正
+
+`app.py` の最後のブロックを以下に変更：
+
+```python
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    
+    # HTTPS対応（証明書ファイルが存在する場合）
+    ssl_keyfile = "key.pem" if os.path.exists("key.pem") else None
+    ssl_certfile = "cert.pem" if os.path.exists("cert.pem") else None
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8443 if (ssl_keyfile and ssl_certfile) else 8000,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile
+    )
+```
+
+#### 2.3 HTTPS で起動
+
+```bash
+python app.py
+
+# ポート 8443 で起動します
+# INFO:     Uvicorn running on https://0.0.0.0:8443
+```
+
+#### 2.4 iPhone Safari でアクセス
+
+1. **アドレスバーに入力**: `https://192.168.1.100:8443`
+2. **警告が表示される**: 「このWebサイトのセキュリティ証明書は信頼されていません」
+3. **「詳細情報」をタップ** → 「このWebサイトにアクセス」をタップ
+4. ✅ 接続成功
+
+---
+
+### Phase3: ホームスクリーン追加（オプション - アプリ化）
+
+iPhoneの「ホーム画面に追加」機能でアプリのように使用可能：
+
+#### 3.1 Safari メニューから追加
+
+1. Safari で `http://192.168.1.100:8000` にアクセス
+2. **共有ボタン**（左下の矢印）をタップ
+3. **「ホーム画面に追加」** をタップ
+4. アプリ名を入力（例: "Chemical Scanner"）
+5. **「追加」** をタップ
+
+#### 3.2 アプリアイコン設定（今後の改善）
+
+`templates/index.html` の `<head>` セクションに以下を追加：
+
+```html
+<!-- Apple タッチアイコン -->
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234472C4' width='180' height='180'/><text x='90' y='100' font-size='80' fill='white' text-anchor='middle' dominant-baseline='middle'>CS</text></svg>">
+
+<!-- フルスクリーン表示 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+```
+
+---
+
+### トラブルシューティング
+
+| 症状 | 原因 | 対応 |
+|------|------|-----|
+| **接続できない** | ネットワーク接続失敗 | MacBook と iPhone が同じWi-Fiに接続しているか確認 |
+| **ページが真っ白** | サーバーエラー | MacBook ターミナルでサーバーログを確認 |
+| **カメラが起動しない** | Safari カメラ許可がない | 設定 → Safari → カメラ を確認 |
+| **OCR が実行されない** | PaddleOCR モデル未ダウンロード | MacBook でローカルテストして確認 |
+| **HTTPS 警告が消えない** | 証明書信頼設定 | iPhoneの「設定」→「一般」→「VPNとデバイス管理」で許可 |
+
+---
+
+### ネットワーク設定の詳細
+
+**Wi-Fi 接続確認コマンド**:
+
+```bash
+# MacBook のWi-Fi ネットワーク名確認
+networksetup -getairportnetwork
+
+# iPhone と同じネットワークに接続していることを確認
+# 例：
+# Current Wi-Fi Network: MyNetwork
+```
+
+**ファイアウォール設定** (必要に応じて):
+
+```bash
+# MacBook のファイアウォール状態確認
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
+
+# ポート 8000 を許可
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/python
+```
+
+---
+
+### 実装スケジュール案
+
+**来週月曜日**:
+- Phase1: Wi-Fi 接続テスト
+- 動作確認チェックリスト実施
+- 問題があれば報告
+
+**来週水曜日**:
+- Phase2: HTTPS 対応（必要に応じて）
+
+**来週金曜日**:
+- Phase3: ホームスクリーン追加
+- 全体テスト完了
+
+---
+
+### ポイント
+
+✅ **既存コードの変更は最小限**
+- `app.py` の起動部分のみ修正
+- HTML/JavaScript は変更不要
+
+✅ **ローカルネットワーク内で動作**
+- インターネット経由ではない
+- Wi-Fi 直結推奨
+
+✅ **セキュリティ考慮**
+- 自社ラボのみアクセス
+- ファイアウォールで保護可能
+
+---
+
+**記録日:** 2026-08-21
+**予定実装日:** 2026-08-25～08-29
+**ステータス**: 準備完了 ⏳ → 実装予定 📋
