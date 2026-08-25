@@ -1363,3 +1363,243 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/python
 **テスト環境**: MacBook (M1 Pro) + iPhone + ラボ Wi-Fi
 **サーバーステータス**: 正常動作 ✅
 **ネットワークステータス**: 要ルーター設定確認 ⚠️
+
+---
+
+## Step1-7 iPhone リアカメラ対応 - プラットフォーム別カメラ実装（8月25日）
+
+### 実装概要
+
+**課題**:
+- 前回までの実装: MacBook のカメラを OpenCV で /video_feed にストリーミング → iPhone ブラウザに表示
+- 問題: iPhone では MacBook のカメラ（前面のみ）が表示されるため、実用性なし
+- 要件: **iPhone からアクセス時は iPhone のリアカメラを使用、MacBook からのアクセス時は MacBook のカメラを使用**
+
+### アーキテクチャ変更
+
+**従来のアーキテクチャ（問題あり）:**
+```
+MacBook OpenCV (front camera only)
+    ↓
+    /video_feed endpoint
+    ↓
+iPhone ブラウザ (MacBook のカメラを表示 ❌)
+```
+
+**新しいアーキテクチャ（解決）:**
+```
+MacBook 側:
+  OpenCV (front camera) → /video_feed endpoint → Desktop ブラウザで表示 ✅
+
+iPhone 側:
+  Browser getUserMedia API (rear camera) → Canvas → /ocr endpoint ✅
+```
+
+### 実装内容
+
+#### 1. **プラットフォーム検出** ✅
+```javascript
+const isMobile = /iPhone|iPad|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+```
+- User Agent で mobile デバイスを自動検出
+- console.log で検出結果を記録
+
+#### 2. **カメラ初期化関数** ✅
+```javascript
+async function initializeCamera() {
+    if (isMobile) {
+        // iPhone: getUserMedia with rear camera
+        localMediaStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment',  // 🔑 リアカメラを指定
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        });
+        videoStream.srcObject = localMediaStream;
+    } else {
+        // MacBook: OpenCV /video_feed stream
+        cameraImg.style.display = 'block';  // 従来通り
+    }
+}
+```
+
+**facingMode オプション**:
+- `'environment'` = リアカメラ（背景を撮影）
+- `'user'` = フロントカメラ（自撮り）
+- デバイスが対応していない場合はブラウザが最適なものを自動選択
+
+#### 3. **統一されたフレームキャプチャ関数** ✅
+```javascript
+async function captureFrameForOCR() {
+    if (isMobile) {
+        // iPhone: canvas から フレームキャプチャ
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoStream, 0, 0);
+        return new Promise(resolve => {
+            canvas.toBlob(blob => {
+                resolve(blob);
+            }, 'image/jpeg', 0.9);
+        });
+    } else {
+        // MacBook: /capture endpoint から取得
+        const response = await fetch('/capture');
+        const blob = await response.blob();
+        return blob;
+    }
+}
+```
+
+**特徴**:
+- 両プラットフォームで同じ Blob 形式でフレーム取得
+- `/ocr` エンドポイントへの投入は統一（プラットフォーム非依存）
+
+#### 4. **performOCR() 関数の更新** ✅
+```javascript
+async function performOCR() {
+    // 従来: const blob = await fetch('/capture');
+    // 新規: プラットフォーム別の captureFrameForOCR() を使用
+    const blob = await captureFrameForOCR();
+    
+    // 以降の /ocr 投入は変わらず
+    const formData = new FormData();
+    formData.append('file', blob, 'frame.jpg');
+    const ocrResponse = await fetch('/ocr', {...});
+}
+```
+
+#### 5. **HTML の更新** ✅
+```html
+<!-- MacBook: OpenCV stream -->
+<img id="camera" src="/video_feed" alt="Camera Feed" style="display:none;">
+
+<!-- iPhone: getUserMedia video element -->
+<video id="video-stream" playsinline autoplay muted style="display:none; width: 100%; height: auto;"></video>
+
+<!-- 統一キャンバス（フレーム取得用、表示不要） -->
+<canvas id="canvas" style="display:none;"></canvas>
+
+<!-- カメラ状態表示 -->
+<p id="camera-status">カメラ初期化中...</p>
+```
+
+**HTML 属性の意味**:
+- `playsinline` = iPhone Safari で inline 再生（フルスクリーン回避）
+- `autoplay` = 自動再生
+- `muted` = 音声なし（autoplay の為には必須）
+
+### テスト計画（8月25日）
+
+#### Phase 1: MacBook テスト
+```bash
+cd /home/user/chemical-scanner
+python app.py
+# http://localhost:8000 にアクセス → /video_feed が表示されることを確認
+# 「自動スキャン: 開始」で OCR 動作確認
+```
+
+**期待される結果**:
+- ✅ `[Platform Detection] Device is desktop`
+- ✅ `[Camera Init] Initializing desktop camera with /video_feed`
+- ✅ `[Camera Init] Mobile camera initialized successfully` は出ない
+- ✅ /video_feed が表示される
+- ✅ OCR が正常に動作
+
+#### Phase 2: iPhone テザリング テスト
+```
+1. iPhone でテザリング有効化
+2. MacBook をテザリングに接続
+3. iPhone Safari で http://172.20.10.xx:8000 アクセス
+```
+
+**期待される結果**:
+- ✅ `[Platform Detection] Device is mobile`
+- ✅ `[Camera Init] Initializing mobile camera with getUserMedia`
+- ✅ カメラ許可ダイアログが表示
+- ✅ リアカメラの映像が表示される
+- ✅ OCR が正常に動作
+
+**カメラ許可ダイアログの対応**:
+- iPhone Safari が初回アクセス時に「カメラへのアクセスを許可しますか？」と表示
+- 「許可」をタップするとリアカメラが有効化される
+
+### トラブルシューティング
+
+| 症状 | 原因 | 対応 |
+|------|------|-----|
+| **[Camera Init] Failed to initialize mobile camera** | ユーザーがカメラ許可を拒否 | Safari 設定 → カメラ許可を確認・変更 |
+| **video が真っ黒で映像が表示されない** | getUserMedia 初期化失敗 | ブラウザコンソールでエラー内容を確認 |
+| **Performance.now() の値が異常に大きい** | USB 通信遅延（テザリング） | 正常な動作（テザリングは遅い） |
+| **MacBook で /video_feed が表示されない** | OpenCV カメラが接続されていない | `python app.py` ターミナルでエラーを確認 |
+
+### ブラウザコンソールの期待ログ
+
+**Mobile (iPhone テザリング接続時)**:
+```
+[Platform Detection] Device is mobile
+[Camera Init] Initializing mobile camera with getUserMedia
+[Camera Init] Mobile camera initialized successfully
+[performOCR] Starting capture (generation 1, device: mobile)
+[captureFrameForOCR] Mobile frame captured, size: XXXXX bytes
+[performOCR] Starting OCR request
+...
+```
+
+**Desktop (MacBook)**:
+```
+[Platform Detection] Device is desktop
+[Camera Init] Initializing desktop camera with /video_feed
+[performOCR] Starting capture (generation 1, device: desktop)
+[captureFrameForOCR] Fetching frame from /capture endpoint
+[performOCR] Capture response received in XXX.XXms
+...
+```
+
+### 実装ファイル
+
+- **templates/index.html**: プラットフォーム検出、カメラ初期化、フレームキャプチャ機能を追加
+- **app.py**: 変更なし（従来の /capture, /video_feed, /ocr エンドポイントは継続使用）
+
+### 実装したコミット
+
+- `ed3ce6e` Step1-7: Implement platform-aware camera - iPhone rear camera support
+
+### ステータス（8月25日）
+
+- **Step1-7 実装**: ✅ 完了
+  - プラットフォーム検出 ✅
+  - iPhone getUserMedia (rear camera) ✅
+  - MacBook OpenCV stream (継続) ✅
+  - 統一フレームキャプチャ関数 ✅
+  - performOCR() 更新 ✅
+
+**次のステップ**:
+- テストフェーズ
+  - MacBook でのテスト（8月25日）
+  - iPhone テザリングでのテスト（8月25日）
+  - Wi-Fi 接続テスト（ルーター設定が許可している場合）
+
+### 技術的なポイント
+
+✅ **既存 /ocr エンドポイントは変更不要**
+- 両プラットフォームから同じ形式（multipart/form-data）で Blob を投入
+- server 側では platform を区別しない
+
+✅ **カメラ初期化のタイミング**
+- `window.addEventListener('load', initializeCamera)` で page load 後に実行
+- ページ完全ロード後に Permission を求める
+
+✅ **Canvas を使わない MacBook**
+- 従来の /capture endpoint を継続使用
+- OpenCV による高速キャプチャが維持される
+
+✅ **Canvas を使う iPhone**
+- getUserMedia video stream から canvas へ draw
+- toBlob() で JPEG 圧縮（品質0.9）して転送
+
+---
+
+**記録日**: 2026-08-25（月）
+**ステータス**: Step1-7 実装完了 ✅ → テスト予定 🧪
