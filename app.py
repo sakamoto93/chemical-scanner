@@ -391,4 +391,23 @@ async def export_csv(data: dict):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+
+    # HTTPS対応（証明書ファイルが存在する場合）
+    ssl_keyfile = "key.pem" if os.path.exists("key.pem") else None
+    ssl_certfile = "cert.pem" if os.path.exists("cert.pem") else None
+
+    if ssl_keyfile and ssl_certfile:
+        print("🔒 Starting with HTTPS (port 8443)")
+        print("   Access from iPhone: https://192.168.x.x:8443")
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=8443,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile
+        )
+    else:
+        print("🚀 Starting with HTTP (port 8000)")
+        print("   ⚠️  Note: mediaDevices requires HTTPS on non-localhost")
+        uvicorn.run(app, host="0.0.0.0", port=8000)
