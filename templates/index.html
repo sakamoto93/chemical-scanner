@@ -174,18 +174,29 @@
             }
         }
 
-        // Initialize camera on page load or immediately if already loaded
+        // Initialize camera with multiple event listeners for reliability
         debugLog('[Init] Setting up camera initialization...');
 
-        if (document.readyState === 'loading') {
-            debugLog('[Init] Document still loading - waiting for load event');
-            window.addEventListener('load', () => {
-                debugLog('[Init] Page load event fired - calling initializeCamera()');
+        let initCalled = false;
+        function callInitializeCamera() {
+            if (!initCalled) {
+                initCalled = true;
+                debugLog('[Init] Calling initializeCamera()');
                 initializeCamera();
+            }
+        }
+
+        // Try DOMContentLoaded first
+        if (document.readyState === 'loading') {
+            debugLog('[Init] Document still loading - waiting for DOMContentLoaded');
+            document.addEventListener('DOMContentLoaded', () => {
+                debugLog('[Init] DOMContentLoaded fired');
+                callInitializeCamera();
             });
         } else {
-            debugLog('[Init] Document already loaded - calling initializeCamera() immediately');
-            initializeCamera();
+            // Document already loaded, use setTimeout for safety
+            debugLog('[Init] Document already loaded - scheduling initialization with setTimeout');
+            setTimeout(callInitializeCamera, 100);
         }
 
         const captureBtn = document.getElementById('capture-btn');
