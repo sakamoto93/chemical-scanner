@@ -399,7 +399,8 @@ if __name__ == "__main__":
 
     if ssl_keyfile and ssl_certfile:
         print("🔒 Starting with HTTPS (port 8443)")
-        print("   Access from iPhone: https://192.168.x.x:8443")
+        print("   Access from MacBook: https://localhost:8443")
+        print("   Access from iPhone:  https://172.20.10.x:8443")
         uvicorn.run(
             app,
             host="0.0.0.0",
@@ -409,5 +410,6 @@ if __name__ == "__main__":
         )
     else:
         print("🚀 Starting with HTTP (port 8000)")
+        print("   Access from MacBook: http://localhost:8000")
         print("   ⚠️  Note: mediaDevices requires HTTPS on non-localhost")
         uvicorn.run(app, host="0.0.0.0", port=8000)
