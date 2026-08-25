@@ -16,6 +16,13 @@
             <video id="video-stream" playsinline autoplay muted style="display:none; width: 100%; height: auto; background: #000;"></video>
             <canvas id="canvas" style="display:none;"></canvas>
             <p id="camera-status" style="text-align: center; color: #666; padding: 10px;">カメラ初期化中...</p>
+            <!-- Debug info panel -->
+            <div id="debug-panel" style="background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 10px; margin-top: 10px; font-size: 12px; font-family: monospace; max-height: 150px; overflow-y: auto; display: none;">
+                <p style="margin: 0; padding: 5px; background: white; border-radius: 2px;">
+                    <strong>デバッグ情報:</strong><br>
+                    <span id="debug-output"></span>
+                </p>
+            </div>
         </div>
         <div class="controls">
             <button id="capture-btn">自動スキャン: 開始</button>
@@ -64,6 +71,18 @@
         </div>
     </div>
     <script>
+        // Debug logging function - logs to both console and page
+        const debugOutput = document.getElementById('debug-output');
+        const debugPanel = document.getElementById('debug-panel');
+        let debugLogs = [];
+
+        function debugLog(message) {
+            console.log(message);
+            debugLogs.push(message);
+            debugOutput.innerHTML = debugLogs.join('<br>');
+            debugPanel.style.display = 'block';
+        }
+
         // Platform detection and camera initialization
         const isMobile = /iPhone|iPad|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const cameraImg = document.getElementById('camera');
@@ -71,14 +90,17 @@
         const cameraStatus = document.getElementById('camera-status');
         let localMediaStream = null;
 
-        console.log('[Platform Detection] Device is', isMobile ? 'mobile' : 'desktop');
+        debugLog('[Platform Detection] Device is ' + (isMobile ? 'mobile' : 'desktop'));
 
         // Initialize camera based on platform
         async function initializeCamera() {
+            debugLog('[Camera Init] Starting initialization...');
             if (isMobile) {
                 // Mobile: use getUserMedia with rear camera
-                console.log('[Camera Init] Initializing mobile camera with getUserMedia');
+                debugLog('[Camera Init] Device is mobile - requesting rear camera');
+                debugLog('[Camera Init] Checking navigator.mediaDevices: ' + (navigator.mediaDevices ? 'available' : 'NOT available'));
                 try {
+                    debugLog('[Camera Init] Calling getUserMedia...');
                     localMediaStream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: 'environment',  // rear camera
@@ -87,19 +109,24 @@
                         },
                         audio: false
                     });
+                    debugLog('[Camera Init] getUserMedia succeeded - stream obtained');
                     videoStream.srcObject = localMediaStream;
+                    debugLog('[Camera Init] Stream assigned to video element');
                     videoStream.style.display = 'block';
+                    debugLog('[Camera Init] Video element made visible');
                     cameraStatus.textContent = 'カメラ: リアカメラ (mobile)';
-                    console.log('[Camera Init] Mobile camera initialized successfully');
+                    debugLog('[Camera Init] Mobile camera initialized successfully ✓');
                 } catch (error) {
-                    console.error('[Camera Init] Failed to initialize mobile camera:', error);
+                    debugLog('[Camera Init] ERROR: ' + error.name + ' - ' + error.message);
+                    console.error('[Camera Init] Full error:', error);
                     cameraStatus.textContent = 'エラー: カメラが使用できません (' + error.message + ')';
                 }
             } else {
                 // Desktop: use OpenCV video stream from MacBook
-                console.log('[Camera Init] Initializing desktop camera with /video_feed');
+                debugLog('[Camera Init] Device is desktop - using /video_feed');
                 cameraImg.style.display = 'block';
                 cameraStatus.textContent = 'カメラ: MacBook (desktop)';
+                debugLog('[Camera Init] Desktop camera initialized ✓');
             }
         }
 
@@ -107,41 +134,52 @@
         async function captureFrameForOCR() {
             if (isMobile) {
                 // Mobile: capture from video stream using canvas
-                if (!videoStream.videoWidth || !videoStream.videoHeight) {
-                    console.error('[captureFrameForOCR] Video not ready');
+                debugLog('[captureFrameForOCR] Mobile: checking video stream...');
+                if (!videoStream || !videoStream.videoWidth || !videoStream.videoHeight) {
+                    debugLog('[captureFrameForOCR] ERROR: Video not ready - videoWidth=' + (videoStream ? videoStream.videoWidth : 'N/A') + ', videoHeight=' + (videoStream ? videoStream.videoHeight : 'N/A'));
                     return null;
                 }
+                debugLog('[captureFrameForOCR] Mobile: video ready ' + videoStream.videoWidth + 'x' + videoStream.videoHeight);
                 const canvas = document.getElementById('canvas');
                 canvas.width = videoStream.videoWidth;
                 canvas.height = videoStream.videoHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(videoStream, 0, 0);
+                debugLog('[captureFrameForOCR] Mobile: canvas frame drawn');
                 return new Promise(resolve => {
                     canvas.toBlob(blob => {
-                        console.log('[captureFrameForOCR] Mobile frame captured, size:', blob.size, 'bytes');
+                        if (blob) {
+                            debugLog('[captureFrameForOCR] Mobile frame captured, size: ' + blob.size + ' bytes');
+                        } else {
+                            debugLog('[captureFrameForOCR] ERROR: blob is null');
+                        }
                         resolve(blob);
                     }, 'image/jpeg', 0.9);
                 });
             } else {
                 // Desktop: use /capture endpoint from MacBook
-                console.log('[captureFrameForOCR] Fetching frame from /capture endpoint');
+                debugLog('[captureFrameForOCR] Desktop: fetching frame from /capture');
                 try {
                     const response = await fetch('/capture');
                     if (!response.ok) {
                         throw new Error(`Capture failed with status ${response.status}`);
                     }
                     const blob = await response.blob();
-                    console.log('[captureFrameForOCR] Desktop frame captured from /capture, size:', blob.size, 'bytes');
+                    debugLog('[captureFrameForOCR] Desktop frame captured, size: ' + blob.size + ' bytes');
                     return blob;
                 } catch (error) {
-                    console.error('[captureFrameForOCR] Desktop capture failed:', error);
+                    debugLog('[captureFrameForOCR] Desktop error: ' + error.message);
                     return null;
                 }
             }
         }
 
         // Initialize camera on page load
-        window.addEventListener('load', initializeCamera);
+        debugLog('[Init] Waiting for page load...');
+        window.addEventListener('load', () => {
+            debugLog('[Init] Page load event fired - calling initializeCamera()');
+            initializeCamera();
+        });
 
         const captureBtn = document.getElementById('capture-btn');
         const statusEl = document.getElementById('status');
@@ -363,12 +401,12 @@
             }
 
             isOCRProcessing = true;
-            console.log('[performOCR] Starting capture (generation', myGeneration, ', device:', isMobile ? 'mobile' : 'desktop', ')');
+            debugLog('[performOCR] Starting capture (device: ' + (isMobile ? 'mobile' : 'desktop') + ')');
             try {
                 const captureStart = performance.now();
                 const blob = await captureFrameForOCR();
                 const captureEnd = performance.now();
-                console.log('[performOCR] Capture completed in', (captureEnd - captureStart).toFixed(2), 'ms');
+                debugLog('[performOCR] Capture completed in ' + (captureEnd - captureStart).toFixed(2) + ' ms');
 
                 if (!blob) {
                     throw new Error('Failed to capture frame from camera');
