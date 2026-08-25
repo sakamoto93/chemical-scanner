@@ -1601,5 +1601,59 @@ python app.py
 
 ---
 
+## Step1-7 実装完了と iPhone リアカメラ動作確認（8月25日）
+
+### 🎉 iPhone リアカメラ実装 完全成功
+
+**テスト結果（実機確認）:**
+- ✅ iPhone Safari で HTTPS アクセス成功 (`https://172.20.10.x:8443`)
+- ✅ mediaDevices API が available
+- ✅ リアカメラ（環境カメラ）が起動
+- ✅ 試薬瓶のラベルを読み取り成功
+- ✅ OCR で試薬情報を抽出
+- ✅ PubChem API から化合物情報を取得
+- ✅ ページに結果が正しく表示
+
+### 実装の最終構成
+
+**MacBook (Desktop):**
+- OpenCV `/video_feed` ストリーミング（従来通り）
+- Front-facing camera 表示
+
+**iPhone (Mobile):**
+- browser getUserMedia API + facingMode: 'environment'
+- **リアカメラ**（環境カメラ）で撮影
+- Canvas フレームキャプチャ
+- `/ocr` エンドポイントに送信
+
+### HTTPS対応
+
+- cert.pem + key.pem で自己署名証明書生成
+- ポート 8443 で HTTPS サーバー起動
+- mediaDevices API はセキュアコンテキスト（HTTPS）必須
+- iPhone Safari での接続成功
+
+### 実装したコミット
+
+- `ed3ce6e` Step1-7: Implement platform-aware camera
+- `a6fdc92` Debug: Add on-page debug logging
+- `ea74930` Fix: Handle already-loaded document state
+- `89cbf68` Fix: Use DOMContentLoaded and setTimeout
+- `94ecad5` feat: Add HTTPS support for mediaDevices
+
+### ステータス（最終）
+
+**Step 1 完全完成** 🎉
+- Step1-1: カメラ表示 ✅
+- Step1-2: OCR機能 ✅
+- Step1-2.5: 自動スキャン ✅
+- Step1-3: 化合物情報取得 ✅
+- Step1-5: リスト表示・管理 ✅
+- Step1-6: Excel/CSV エクスポート ✅
+- **Step1-7: iPhone リアカメラ対応** ✅ **実装完了・実機確認済み**
+
+---
+
 **記録日**: 2026-08-25（月）
-**ステータス**: Step1-7 実装完了 ✅ → テスト予定 🧪
+**ステータス**: Step1-7 実装完了 ✅ → **実機テスト完了 ✅**
+**最終判定**: iPhone での実用的な使用が可能 🚀
