@@ -1925,3 +1925,271 @@ function generateShareQR() {
 
 **記録日:** 2026-08-25
 **ステータス:** 要件分析完了 ✅ → 実装検討準備中 📋
+
+---
+
+## ネットワーク構成の検討：複数ユーザー環境での実装方法
+
+### ⚠️ 現在のテザリング方式の制限
+
+**現状:**
+- MacBook がテザリングを提供
+- 複数の iPhone がテザリング経由でアクセス
+- **管理者が MacBook を持ち続ける必要**
+
+**問題:**
+- 管理者が常に MacBook を携帯する必要
+- テザリング中は MacBook のバッテリー消費が多い
+- 管理者が席を離れるとアクセス不可
+
+---
+
+### 🎯 推奨ネットワーク構成
+
+#### **オプション1：Wi-Fi ルーター経由（推奨）** ⭐
+
+```
+┌─ Wi-Fi ルーター ─┐
+│                 │
+├─ MacBook（サーバー）
+│  └─ /ocr エンドポイント
+│
+├─ iPhone A（ユーザー1）
+├─ iPhone B（ユーザー2）
+└─ iPhone C（ユーザー3）
+```
+
+**実装方法:**
+1. MacBook を Wi-Fi ルーターに接続
+2. 複数ユーザーが同じ Wi-Fi に接続
+3. 全員が MacBook のサーバーにアクセス
+
+**利点：**
+- ✅ 管理者が MacBook を持ち歩く不要
+- ✅ 全員が自由に同じネットワークに接続
+- ✅ サーバーを研究室に固定設置可能
+- ✅ テザリングより安定
+
+**課題：**
+- ⚠️ **Wi-Fi ルーターのクライアント分離設定**
+  - 同一 SSID でも端末間通信がブロックされる場合がある
+  - 前回（8月22日）の Wi-Fi テスト失敗の原因
+  - **対応**: ルーター管理者に「クライアント分離」「プライバシーセパレータ」をオフにしてもらう
+
+**ネットワークセットアップ:**
+
+```bash
+# MacBook のローカル IP を確認
+ifconfig | grep "inet 192"
+# 出力例: inet 192.168.1.100 netmask 0xffffff00
+
+# ユーザーは以下でアクセス
+https://192.168.1.100:8443
+```
+
+---
+
+#### **オプション2：MacBook を常時起動サーバーに**
+
+MacBook を研究室に固定設置して常に起動
+
+```
+MacBook（研究室のデスク）
+   ↓ 常時起動
+   https://192.168.1.100:8443
+   ↓
+複数ユーザーが Wi-Fi で接続
+```
+
+**利点：**
+- ✅ 24/7 サーバー利用可能
+- ✅ テザリング不要
+- ✅ ユーザーが自由な時間にアクセス可能
+
+**課題：**
+- ⚠️ MacBook の電源管理（スリープ設定をオフ）
+- ⚠️ Wi-Fi ルーターの安定性に依存
+
+**実装手順:**
+
+```bash
+# MacBook のスリープを無効化（常時起動）
+sudo systemsetup -setsleepdisable on
+
+# または System Preferences で:
+# Energy Saver → Never sleep
+
+# サーバー起動スクリプトを作成
+cat > ~/chemical-scanner-server.sh << 'EOF'
+#!/bin/bash
+cd /home/user/chemical-scanner
+python app.py
+EOF
+
+chmod +x ~/chemical-scanner-server.sh
+
+# ログイン時に自動起動させる設定
+# System Preferences → General → Login Items に追加
+```
+
+---
+
+#### **オプション3：専用サーバー機（長期視点）** 🚀
+
+Raspberry Pi や中古小型サーバーをラボに固定設置
+
+```
+Raspberry Pi（¥5,000～10,000）
+   ↓ 常時起動
+   https://192.168.1.150:8443
+   ↓
+複数ユーザーが Wi-Fi で接続
+```
+
+**利点：**
+- ✅ MacBook 不要（研究に使用可能）
+- ✅ 24/7 稼働（低消費電力）
+- ✅ スケーラビリティ向上
+
+**課題：**
+- ⚠️ 初期セットアップが複雑
+- ⚠️ PaddleOCR 環境構築が必要
+- ⚠️ GPU がないと処理速度が遅い可能性
+
+**構成例：**
+
+```bash
+# Raspberry Pi OS（Debian 系）にセットアップ
+# 1. Python 環境
+pip install -r requirements.txt
+
+# 2. PaddleOCR のモデルダウンロード
+python -c "from paddleocr import PaddleOCR; ocr = PaddleOCR()"
+
+# 3. systemd サービス化（自動起動）
+sudo tee /etc/systemd/system/chemical-scanner.service << EOF
+[Unit]
+Description=Chemical Scanner Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/chemical-scanner
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable chemical-scanner
+sudo systemctl start chemical-scanner
+```
+
+---
+
+### 📊 オプション比較表
+
+| 項目 | テザリング（現在） | Wi-Fi ルーター | 常時起動 | 専用サーバー |
+|------|------------------|------------|--------|-----------|
+| **管理者携帯** | ✅ 必須 | ❌ 不要 | ❌ 不要 | ❌ 不要 |
+| **24/7 利用** | ❌ 不可 | ⚠️ 条件付き | ✅ 可能 | ✅ 可能 |
+| **セットアップ** | 簡単 | 簡単 | 中程度 | 複雑 |
+| **初期コスト** | ¥0 | ¥0 | ¥0 | ¥5k～10k |
+| **消費電力** | 多い | 中程度 | 中程度 | 低い |
+| **推奨時期** | テスト用 | **短期運用** | **中期運用** | **長期運用** |
+
+---
+
+### 🎯 推奨実装ロードマップ
+
+#### **短期（8月26日～29日）：Wi-Fi ルーター対応テスト**
+
+**Step 1: ルーター設定確認**
+```
+1. ルーター管理画面にアクセス
+2. 「クライアント分離」「AP Isolation」をオフ
+3. 設定保存
+```
+
+**Step 2: Wi-Fi 接続テスト**
+```bash
+# MacBook のローカル IP を確認
+ifconfig | grep "inet 192"
+
+# iPhone Safari で以下にアクセス
+https://192.168.x.x:8443
+```
+
+**Step 3: 複数ユーザーテスト**
+- 2～3 台の iPhone で同時アクセス
+- ボトルネック計測
+
+**成功時の効果:**
+- テザリング不要
+- 研究室内で自由にアクセス可能
+
+---
+
+#### **中期（9月以降）：常時起動サーバー化**
+
+MacBook をラボのデスクに常時設置
+
+**Step 1: スリープ無効化**
+```bash
+sudo systemsetup -setsleepdisable on
+```
+
+**Step 2: 自動起動スクリプト設定**
+- ログイン時に自動起動
+
+**Step 3: ネットワーク安定性確認**
+- 複数ユーザーの同時アクセステスト
+
+---
+
+#### **長期（数ヶ月後）：専用サーバー検討**
+
+- Raspberry Pi 導入の検討
+- PaddleOCR 環境移行
+- コスト効果分析
+
+---
+
+### 🔐 セキュリティに関する注意
+
+**複数ユーザー環境での考慮事項:**
+
+1. **ローカルネットワーク限定**
+   - Wi-Fi LAN のみを使用
+   - インターネット経由のアクセスは非推奨
+
+2. **HTTPS で通信保護**
+   - 既実装 ✅
+   - 自己署名証明書で十分（ローカル LAN なので）
+
+3. **ユーザー認証（オプション）**
+   - 現在なし
+   - 必要に応じて実装可能
+
+4. **データバックアップ**
+   - SQLite DB は定期的にバックアップ
+   - ネットワークドライブに保存推奨
+
+---
+
+### 📝 現在の状態
+
+**テザリング（テスト用）:** ✅ 動作確認済み
+
+**次のアクション:**
+1. Wi-Fi ルーター設定確認 ← **推奨**
+2. Wi-Fi 経由でのアクセステスト
+3. 複数ユーザーでの同時読み取りテスト
+
+---
+
+**記録日:** 2026-08-25
+**実装段階:** Phase 1（Wi-Fi ルーター対応）の準備中
+**優先度:** 高（マルチユーザー対応の必須条件）
