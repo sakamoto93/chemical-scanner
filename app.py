@@ -29,10 +29,25 @@ def load_risk_assessment_list():
     """労働安全衛生法に基づくリスク対象化合物リストを読み込む"""
     global RISK_ASSESSMENT_COMPOUNDS, RISK_ASSESSMENT_METADATA
 
-    risk_list_file = "/root/.claude/uploads/93a068ea-6a56-579a-a9ec-54340264b31e/d5a5f897-_______________.xlsx"
+    # 複数のパスを試す（クラウド環境とローカル環境に対応）
+    possible_paths = [
+        "data/risk_assessment.xlsx",  # ローカル: プロジェクトディレクトリ
+        os.path.expanduser("~/data/risk_assessment.xlsx"),  # ホームディレクトリ
+        "/root/.claude/uploads/93a068ea-6a56-579a-a9ec-54340264b31e/d5a5f897-_______________.xlsx",  # クラウド
+    ]
 
-    if not os.path.exists(risk_list_file):
-        print(f"⚠️  Risk assessment file not found: {risk_list_file}")
+    risk_list_file = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            risk_list_file = path
+            print(f"✅ Found risk assessment file: {path}")
+            break
+
+    if not risk_list_file:
+        print(f"⚠️  Risk assessment file not found in any location:")
+        for path in possible_paths:
+            print(f"    - {path}")
+        print("📋 To enable risk assessment, place 'risk_assessment.xlsx' in the 'data/' directory")
         return False
 
     try:
