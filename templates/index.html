@@ -258,10 +258,12 @@
                 name: currentCompoundInfo.name,
                 commonName: currentCompoundInfo.commonName || '',
                 formula: currentCompoundInfo.formula,
-                weight: currentCompoundInfo.weight
+                weight: currentCompoundInfo.weight,
+                riskAssessment: currentCompoundInfo.riskAssessment || null
             };
 
             compoundList.push(item);
+            console.log('[addToList] Added item with riskAssessment:', item.riskAssessment);
             updateCompoundTable();
 
             // リスト追加後にOCR結果をクリアしてスムーズに次のスキャンに進む
