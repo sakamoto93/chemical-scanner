@@ -468,7 +468,8 @@
 
                 const data = await ocrResponse.json();
                 console.log('[performOCR] OCR data parsed, texts count:', data.texts ? data.texts.length : 0);
-                console.log('[performOCR] CAS:', data.cas_number);
+                console.log('[performOCR] All CAS numbers detected:', data.cas_numbers ? data.cas_numbers.join(', ') : 'none');
+                console.log('[performOCR] Primary CAS:', data.cas_number);
                 console.log('[performOCR] Has compound_info:', !!data.compound_info);
                 console.log('[performOCR] Has risk_assessment:', !!data.risk_assessment);
                 if (data.risk_assessment) {
@@ -517,7 +518,15 @@
                             html += `<hr>`;
                             if (data.compound_info.source === 'cas') {
                                 html += `<p><strong>検出方法: CAS番号から取得</strong></p>`;
-                                html += `<p><strong>CAS番号:</strong> ${data.cas_number}</p>`;
+                                // 複数のCAS番号を表示
+                                if (data.cas_numbers && data.cas_numbers.length > 0) {
+                                    html += `<p><strong>検出CAS番号:</strong> ${data.cas_numbers.join(', ')}</p>`;
+                                    if (data.cas_numbers.length > 1) {
+                                        html += `<p style="font-size: 0.9em; color: #666;">（複数の試薬の混合表記です）</p>`;
+                                    }
+                                } else {
+                                    html += `<p><strong>CAS番号:</strong> ${data.cas_number}</p>`;
+                                }
                             } else if (data.compound_info.source === 'name') {
                                 html += `<p><strong>検出方法: 化合物名から取得</strong></p>`;
                                 if (data.compound_info.cas !== 'N/A') {

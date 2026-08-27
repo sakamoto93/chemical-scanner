@@ -151,15 +151,18 @@ def resize_for_ocr(image_array, max_dimension=MAX_OCR_DIMENSION):
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-def extract_cas_number(texts):
-    """OCRテキストからCAS番号を抽出"""
+def extract_cas_numbers(texts):
+    """OCRテキストからすべてのCAS番号を抽出（複数対応）"""
     cas_pattern = r'\d{2,7}-\d{2}-\d'
+    cas_numbers = []
     for text_obj in texts:
         text = text_obj.get('text', '') if isinstance(text_obj, dict) else text_obj
-        match = re.search(cas_pattern, text)
-        if match:
-            return match.group(0)
-    return None
+        # findall で複数マッチするすべてのCAS番号を取得
+        matches = re.findall(cas_pattern, text)
+        for match in matches:
+            if match not in cas_numbers:  # 重複排除
+                cas_numbers.append(match)
+    return cas_numbers if cas_numbers else None
 
 def check_risk_assessment(cas_number):
     """CAS番号がリスク対象化合物リストに含まれているか確認"""
@@ -393,20 +396,36 @@ async def perform_ocr(file: UploadFile = File(...)):
                         "confidence": float(score)
                     })
 
-        # CAS番号を抽出
-        cas_number = extract_cas_number(texts)
+        # CAS番号を抽出（複数対応）
+        cas_numbers = extract_cas_numbers(texts)
+        cas_number = cas_numbers[0] if cas_numbers else None  # 最初のCAS番号を使用
         compound_info = None
         risk_assessment = None
 
-        print(f"[/ocr] Extracted CAS: {cas_number}")
+        print(f"[/ocr] Extracted CAS numbers: {cas_numbers}")
 
-        if cas_number:
-            # リスク対象化合物をチェック
-            risk_assessment = check_risk_assessment(cas_number)
-            print(f"[/ocr] Risk assessment result: {risk_assessment}")
+        if cas_numbers:
+            # すべてのCAS番号に対してリスク判定を実行
+            for cas in cas_numbers:
+                risk_result = check_risk_assessment(cas)
+                if risk_result:
+                    # 最初のリスク対象化合物を使用
+                    risk_assessment = risk_result
+                    cas_number = cas  # リスク対象が見つかった場合、そのCAS番号を優先
+                    print(f"[/ocr] Found risk target: CAS={cas}, {risk_result}")
+                    break
+
+            # リスク対象でない場合は、最初のCAS番号を使用
+            if not risk_assessment and cas_numbers:
+                cas_number = cas_numbers[0]
 
             # Phase 1: CAS番号で検索
-            compound_info = search_pubchem_by_cas(cas_number)
+            if cas_number:
+                compound_info = search_pubchem_by_cas(cas_number)
+                if not risk_assessment:
+                    # Phase 1で見つけた場合、改めてリスク判定
+                    risk_assessment = check_risk_assessment(cas_number)
+                    print(f"[/ocr] Risk assessment result: {risk_assessment}")
         else:
             # Phase 2: 化合物名で検索（信頼度が高いテキストから順に試す）
             # 信頼度でソート（降順）
@@ -430,11 +449,12 @@ async def perform_ocr(file: UploadFile = File(...)):
 
         response_data = {
             "texts": texts,
-            "cas_number": cas_number,
+            "cas_numbers": cas_numbers,  # すべてのCAS番号
+            "cas_number": cas_number,    # 優先されるCAS番号（最初またはリスク対象）
             "compound_info": compound_info,
             "risk_assessment": risk_assessment
         }
-        print(f"[/ocr] Final response: cas_number={cas_number}, has_risk_assessment={risk_assessment is not None}, risk_assessment={risk_assessment}")
+        print(f"[/ocr] Final response: all_cas_numbers={cas_numbers}, primary_cas={cas_number}, has_risk_assessment={risk_assessment is not None}")
         return JSONResponse(response_data)
     except Exception as e:
         import traceback
