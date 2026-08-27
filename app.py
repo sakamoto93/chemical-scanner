@@ -68,14 +68,18 @@ def load_risk_assessment_list():
                     break
 
                 # ヘッダー行の判定
-                if row and any(cell and '名称' in str(cell) for cell in row):
+                if row and any(cell and ('名称' in str(cell) or 'CAS' in str(cell)) for cell in row):
                     header_row = row_idx
-                    # 列の位置を特定
+                    # 列の位置を特定（複数の表記に対応）
                     for col_idx, cell_val in enumerate(row):
-                        if cell_val and '名称' in str(cell_val):
-                            name_col = col_idx
-                        if cell_val and 'CAS' in str(cell_val):
-                            cas_col = col_idx
+                        if cell_val:
+                            cell_str = str(cell_val).lower()
+                            # 化合物名列を探す（「名称」「化合物名」「Name」などに対応）
+                            if any(term in str(cell_val) for term in ['名称', '化合物名', 'Name', '名前']):
+                                name_col = col_idx
+                            # CAS番号列を探す（「CAS番号」「CAS」などに対応）
+                            if 'cas' in cell_str:
+                                cas_col = col_idx
                     print(f"  → Header row {header_row}: name_col={name_col}, cas_col={cas_col}")
                     break
 
@@ -119,6 +123,15 @@ def load_risk_assessment_list():
 
         total_compounds = len(RISK_ASSESSMENT_COMPOUNDS)
         print(f"✅ Loaded {total_compounds} risk assessment compounds")
+
+        # ロード済み化合物の最初の数件を表示（デバッグ用）
+        if RISK_ASSESSMENT_COMPOUNDS:
+            print("   📋 Sample loaded compounds:")
+            for i, (cas, info) in enumerate(list(RISK_ASSESSMENT_COMPOUNDS.items())[:5]):
+                print(f"      - {cas}: {info['name']} (sheet: {info['sheet']})")
+            if total_compounds > 5:
+                print(f"      ... and {total_compounds - 5} more")
+
         RISK_ASSESSMENT_METADATA["loaded"] = True
         RISK_ASSESSMENT_METADATA["total"] = total_compounds
         return True
