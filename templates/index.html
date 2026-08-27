@@ -55,6 +55,7 @@
                         <th>化合物名</th>
                         <th>分子式</th>
                         <th>分子量</th>
+                        <th style="background: #fff3e0;">リスク</th>
                         <th>削除</th>
                     </tr>
                 </thead>
@@ -290,11 +291,15 @@
                     itemsToAdd.forEach((item, index) => {
                         const row = document.createElement('tr');
                         const displayName = item.commonName ? `${item.name}<br/><small>(${item.commonName})</small>` : item.name;
+                        const riskBadge = item.riskAssessment && item.riskAssessment.is_risk_target ?
+                            '<span style="background: #d32f2f; color: white; padding: 4px 8px; border-radius: 3px; font-size: 0.85em; font-weight: bold;">⚠️ 対象</span>' :
+                            '-';
                         row.innerHTML = `
                             <td>${item.cas}</td>
                             <td>${displayName}</td>
                             <td>${item.formula}</td>
                             <td>${item.weight}</td>
+                            <td style="text-align: center;">${riskBadge}</td>
                             <td><button class="delete-btn" onclick="deleteFromList(${index})">削除</button></td>
                         `;
                         compoundTbody.appendChild(row);
@@ -305,11 +310,15 @@
                         const index = currentRows + offset;
                         const row = document.createElement('tr');
                         const displayName = item.commonName ? `${item.name}<br/><small>(${item.commonName})</small>` : item.name;
+                        const riskBadge = item.riskAssessment && item.riskAssessment.is_risk_target ?
+                            '<span style="background: #d32f2f; color: white; padding: 4px 8px; border-radius: 3px; font-size: 0.85em; font-weight: bold;">⚠️ 対象</span>' :
+                            '-';
                         row.innerHTML = `
                             <td>${item.cas}</td>
                             <td>${displayName}</td>
                             <td>${item.formula}</td>
                             <td>${item.weight}</td>
+                            <td style="text-align: center;">${riskBadge}</td>
                             <td><button class="delete-btn" onclick="deleteFromList(${index})">削除</button></td>
                         `;
                         compoundTbody.appendChild(row);
@@ -325,16 +334,22 @@
             compoundTbody.innerHTML = '';
             if (compoundList.length === 0) {
                 emptyMessage.style.display = 'block';
+                exportButtons.style.display = 'none';
             } else {
                 emptyMessage.style.display = 'none';
+                exportButtons.style.display = 'block';
                 compoundList.forEach((item, idx) => {
                     const row = document.createElement('tr');
                     const displayName = item.commonName ? `${item.name}<br/><small>(${item.commonName})</small>` : item.name;
+                    const riskBadge = item.riskAssessment && item.riskAssessment.is_risk_target ?
+                        '<span style="background: #d32f2f; color: white; padding: 4px 8px; border-radius: 3px; font-size: 0.85em; font-weight: bold;">⚠️ 対象</span>' :
+                        '-';
                     row.innerHTML = `
                         <td>${item.cas}</td>
                         <td>${displayName}</td>
                         <td>${item.formula}</td>
                         <td>${item.weight}</td>
+                        <td style="text-align: center;">${riskBadge}</td>
                         <td><button class="delete-btn" onclick="deleteFromList(${idx})">削除</button></td>
                     `;
                     compoundTbody.appendChild(row);
@@ -363,7 +378,8 @@
                             commonName: item.commonName,
                             formula: item.formula,
                             weight: item.weight,
-                            source: 'unknown'  // 各試薬の検出方法を記録していないため 'unknown'
+                            source: 'unknown',  // 各試薬の検出方法を記録していないため 'unknown'
+                            riskAssessment: item.riskAssessment || null
                         }))
                     })
                 });
@@ -477,6 +493,15 @@
                             html += `<p><strong>${item.text}</strong> (信頼度: ${(item.confidence * 100).toFixed(1)}%)</p>`;
                         });
 
+                        // リスク警告表示
+                        if (data.risk_assessment && data.risk_assessment.is_risk_target) {
+                            html += `<div style="background: #ffebee; border-left: 4px solid #d32f2f; padding: 15px; margin: 15px 0; border-radius: 4px;">`;
+                            html += `<p style="color: #d32f2f; font-weight: bold; margin-top: 0;">⚠️ リスク対象化合物</p>`;
+                            html += `<p style="margin: 8px 0; color: #c62828;">この化合物は「${data.risk_assessment.regulation}」に指定されています。</p>`;
+                            html += `<p style="margin: 8px 0; color: #666; font-size: 0.9em;">法令に基づくラベル表示・SDS交付等が義務付けられます。</p>`;
+                            html += `</div>`;
+                        }
+
                         // 化合物情報を表示
                         if (data.compound_info) {
                             html += `<hr>`;
@@ -498,7 +523,8 @@
 
                             currentCompoundInfo = {
                                 ...data.compound_info,
-                                commonName: data.compound_info.common_name || ''
+                                commonName: data.compound_info.common_name || '',
+                                riskAssessment: data.risk_assessment || null
                             };
                             addToListContainer.style.display = 'block';
                         } else {

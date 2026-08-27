@@ -13,11 +13,107 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import pubchempy as pcp
+import openpyxl
+import os
 
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 MAX_OCR_DIMENSION = 1200  # OCR処理時間短縮のため、長辺をこのサイズに制限
+
+# リスク対象化合物リストをグローバルにロード
+RISK_ASSESSMENT_COMPOUNDS = {}
+RISK_ASSESSMENT_METADATA = {}
+
+def load_risk_assessment_list():
+    """労働安全衛生法に基づくリスク対象化合物リストを読み込む"""
+    global RISK_ASSESSMENT_COMPOUNDS, RISK_ASSESSMENT_METADATA
+
+    risk_list_file = "/root/.claude/uploads/93a068ea-6a56-579a-a9ec-54340264b31e/d5a5f897-_______________.xlsx"
+
+    if not os.path.exists(risk_list_file):
+        print(f"⚠️  Risk assessment file not found: {risk_list_file}")
+        return False
+
+    try:
+        wb = openpyxl.load_workbook(risk_list_file, data_only=True)
+
+        # 全シートを処理（複数の年度版が存在）
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            print(f"📋 Loading risk assessment compounds from sheet: {sheet_name}")
+
+            # ヘッダー行を探す
+            header_row = None
+            cas_col = None
+            name_col = None
+
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+                if row_idx > 50:  # 最初の50行をスキャン
+                    break
+
+                # ヘッダー行の判定
+                if row and any(cell and '名称' in str(cell) for cell in row):
+                    header_row = row_idx
+                    # 列の位置を特定
+                    for col_idx, cell_val in enumerate(row):
+                        if cell_val and '名称' in str(cell_val):
+                            name_col = col_idx
+                        if cell_val and 'CAS' in str(cell_val):
+                            cas_col = col_idx
+                    print(f"  → Header row {header_row}: name_col={name_col}, cas_col={cas_col}")
+                    break
+
+            if not header_row:
+                print(f"  ⚠️  Header row not found in {sheet_name}")
+                continue
+
+            # データ行を処理
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+                if row_idx <= header_row:
+                    continue
+
+                if not row or all(cell is None for cell in row):
+                    continue
+
+                cas_number = None
+                compound_name = None
+
+                if cas_col is not None and cas_col < len(row):
+                    cas_val = row[cas_col]
+                    if cas_val:
+                        # CAS番号の形式を抽出（例：91-94-1他 → 91-94-1）
+                        cas_str = str(cas_val).strip()
+                        cas_match = re.search(r'\d{2,7}-\d{2}-\d', cas_str)
+                        if cas_match:
+                            cas_number = cas_match.group(0)
+
+                if name_col is not None and name_col < len(row):
+                    name_val = row[name_col]
+                    if name_val:
+                        compound_name = str(name_val).strip()
+
+                # CAS番号で登録
+                if cas_number and compound_name:
+                    if cas_number not in RISK_ASSESSMENT_COMPOUNDS:
+                        RISK_ASSESSMENT_COMPOUNDS[cas_number] = {
+                            "name": compound_name,
+                            "sheet": sheet_name,
+                            "detected": False
+                        }
+
+        total_compounds = len(RISK_ASSESSMENT_COMPOUNDS)
+        print(f"✅ Loaded {total_compounds} risk assessment compounds")
+        RISK_ASSESSMENT_METADATA["loaded"] = True
+        RISK_ASSESSMENT_METADATA["total"] = total_compounds
+        return True
+
+    except Exception as e:
+        print(f"❌ Error loading risk assessment list: {e}")
+        return False
+
+# サーバー起動時にリスト読み込み
+load_risk_assessment_list()
 
 def resize_for_ocr(image_array, max_dimension=MAX_OCR_DIMENSION):
     """OCR処理速度向上のため画像をリサイズ（長辺が max_dimension を超える場合のみ縮小）"""
@@ -40,6 +136,23 @@ def extract_cas_number(texts):
         match = re.search(cas_pattern, text)
         if match:
             return match.group(0)
+    return None
+
+def check_risk_assessment(cas_number):
+    """CAS番号がリスク対象化合物リストに含まれているか確認"""
+    if not cas_number or not RISK_ASSESSMENT_COMPOUNDS:
+        return None
+
+    if cas_number in RISK_ASSESSMENT_COMPOUNDS:
+        compound_info = RISK_ASSESSMENT_COMPOUNDS[cas_number]
+        compound_info["detected"] = True  # 検出済みとしてマーク
+        return {
+            "is_risk_target": True,
+            "name": compound_info["name"],
+            "sheet": compound_info["sheet"],
+            "regulation": "労働安全衛生法に基づくラベル表示・SDS交付等の義務対象物質"
+        }
+
     return None
 
 def validate_cas_checkdigit(cas_number):
@@ -260,8 +373,12 @@ async def perform_ocr(file: UploadFile = File(...)):
         # CAS番号を抽出
         cas_number = extract_cas_number(texts)
         compound_info = None
+        risk_assessment = None
 
         if cas_number:
+            # リスク対象化合物をチェック
+            risk_assessment = check_risk_assessment(cas_number)
+
             # Phase 1: CAS番号で検索
             compound_info = search_pubchem_by_cas(cas_number)
         else:
@@ -278,12 +395,16 @@ async def perform_ocr(file: UploadFile = File(...)):
                     result = search_pubchem_by_name(compound_name)
                     if result:
                         compound_info = result
+                        # 取得したCAS番号でリスク判定
+                        if result.get('cas') and result['cas'] != 'N/A':
+                            risk_assessment = check_risk_assessment(result['cas'])
                         break
 
         return JSONResponse({
             "texts": texts,
             "cas_number": cas_number,
-            "compound_info": compound_info
+            "compound_info": compound_info,
+            "risk_assessment": risk_assessment
         })
     except Exception as e:
         import traceback
@@ -301,7 +422,7 @@ async def export_excel(data: dict):
         ws.title = "Compounds"
 
         # ヘッダーを作成
-        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名"]
+        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名", "リスク対象"]
         ws.append(headers)
 
         # ヘッダーのスタイルを設定（青背景、白文字、太字）
@@ -322,11 +443,13 @@ async def export_excel(data: dict):
             formula = compound.get("formula", "N/A")
             weight = compound.get("weight", "N/A")
             common_name = compound.get("commonName", "")
+            risk_info = compound.get("riskAssessment", {})
+            risk_text = "対象" if (risk_info and risk_info.get("is_risk_target")) else "-"
 
-            ws.append([cas, name, source_text, formula, weight, common_name])
+            ws.append([cas, name, source_text, formula, weight, common_name, risk_text])
 
         # 列幅を自動調整
-        column_widths = [15, 50, 15, 15, 12, 20]
+        column_widths = [15, 50, 15, 15, 12, 20, 15]
         for idx, width in enumerate(column_widths, 1):
             ws.column_dimensions[chr(64 + idx)].width = width
 
@@ -359,7 +482,7 @@ async def export_csv(data: dict):
         writer = csv.writer(output)
 
         # ヘッダーを書き込み
-        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名"]
+        headers = ["CAS番号", "化合物名", "検出方法", "分子式", "分子量", "通称名", "リスク対象"]
         writer.writerow(headers)
 
         # データを書き込み
@@ -371,8 +494,10 @@ async def export_csv(data: dict):
             formula = compound.get("formula", "N/A")
             weight = compound.get("weight", "N/A")
             common_name = compound.get("commonName", "")
+            risk_info = compound.get("riskAssessment", {})
+            risk_text = "対象" if (risk_info and risk_info.get("is_risk_target")) else "-"
 
-            writer.writerow([cas, name, source_text, formula, weight, common_name])
+            writer.writerow([cas, name, source_text, formula, weight, common_name, risk_text])
 
         csv_content = output.getvalue()
 
