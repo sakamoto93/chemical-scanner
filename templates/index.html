@@ -466,13 +466,14 @@
 
                 const data = await ocrResponse.json();
                 console.log('[performOCR] OCR data parsed, texts count:', data.texts ? data.texts.length : 0);
-                console.log('[performOCR] Server response:', {
-                    has_cas: !!data.cas_number,
-                    cas_number: data.cas_number,
-                    has_compound_info: !!data.compound_info,
-                    has_risk_assessment: !!data.risk_assessment,
-                    risk_assessment: data.risk_assessment
-                });
+                console.log('[performOCR] CAS:', data.cas_number);
+                console.log('[performOCR] Has compound_info:', !!data.compound_info);
+                console.log('[performOCR] Has risk_assessment:', !!data.risk_assessment);
+                if (data.risk_assessment) {
+                    console.log('[performOCR] Risk Assessment Detail:', data.risk_assessment);
+                } else {
+                    console.log('[performOCR] ⚠️  NO risk_assessment in response');
+                }
 
                 // 停止中、または停止→再開により世代が変わった場合は古い結果を破棄
                 if (shouldStop || myGeneration !== scanGeneration) {

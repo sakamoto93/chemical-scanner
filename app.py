@@ -413,12 +413,14 @@ async def perform_ocr(file: UploadFile = File(...)):
                             print(f"[/ocr] Risk assessment for {result.get('cas')}: {risk_assessment}")
                         break
 
-        return JSONResponse({
+        response_data = {
             "texts": texts,
             "cas_number": cas_number,
             "compound_info": compound_info,
             "risk_assessment": risk_assessment
-        })
+        }
+        print(f"[/ocr] Final response: cas_number={cas_number}, has_risk_assessment={risk_assessment is not None}, risk_assessment={risk_assessment}")
+        return JSONResponse(response_data)
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
