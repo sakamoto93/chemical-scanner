@@ -40,8 +40,12 @@ def load_risk_assessment_list():
     for path in possible_paths:
         if os.path.exists(path):
             risk_list_file = path
+            file_size = os.path.getsize(path)
             print(f"✅ Found risk assessment file: {path}")
+            print(f"   📊 File size: {file_size} bytes")
             break
+        else:
+            print(f"   ⏭️  Not found: {path}")
 
     if not risk_list_file:
         print(f"⚠️  Risk assessment file not found in any location:")
