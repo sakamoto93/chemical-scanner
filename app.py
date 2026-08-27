@@ -127,6 +127,9 @@ def load_risk_assessment_list():
                             "sheet": sheet_name,
                             "detected": False
                         }
+                        # デバッグ: 最初の数件をログ出力
+                        if len(RISK_ASSESSMENT_COMPOUNDS) <= 5:
+                            print(f"    📝 Loaded: {cas_number} -> {compound_name}")
 
         total_compounds = len(RISK_ASSESSMENT_COMPOUNDS)
         print(f"✅ Loaded {total_compounds} risk assessment compounds")
