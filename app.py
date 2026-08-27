@@ -68,7 +68,7 @@ def load_risk_assessment_list():
                     break
 
                 # ヘッダー行の判定
-                if row and any(cell and ('名称' in str(cell) or 'CAS' in str(cell)) for cell in row):
+                if row and any(cell and ('名称' in str(cell) or 'CAS' in str(cell) or '化合物' in str(cell)) for cell in row):
                     header_row = row_idx
                     # 列の位置を特定（複数の表記に対応）
                     for col_idx, cell_val in enumerate(row):
@@ -80,11 +80,18 @@ def load_risk_assessment_list():
                             # CAS番号列を探す（「CAS番号」「CAS」などに対応）
                             if 'cas' in cell_str:
                                 cas_col = col_idx
-                    print(f"  → Header row {header_row}: name_col={name_col}, cas_col={cas_col}")
+                    print(f"  → Header row {header_row}: name_col={name_col}, cas_col={cas_col}, row={row}")
                     break
 
             if not header_row:
                 print(f"  ⚠️  Header row not found in {sheet_name}")
+                # デバッグ用：最初の5行を表示
+                print(f"  📄 First 5 rows of {sheet_name}:")
+                for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+                    if row_idx <= 5:
+                        print(f"    Row {row_idx}: {row}")
+                    else:
+                        break
                 continue
 
             # データ行を処理
