@@ -190,11 +190,13 @@ def extract_cas_numbers(texts):
 def check_risk_assessment(cas_number):
     """CAS番号がリスク対象化合物リストに含まれているか確認"""
     if not cas_number or not RISK_ASSESSMENT_COMPOUNDS:
+        print(f"  [check_risk_assessment] Skipped: cas_number={cas_number}, compounds_loaded={len(RISK_ASSESSMENT_COMPOUNDS)}")
         return None
 
     if cas_number in RISK_ASSESSMENT_COMPOUNDS:
         compound_info = RISK_ASSESSMENT_COMPOUNDS[cas_number]
         compound_info["detected"] = True  # 検出済みとしてマーク
+        print(f"  [check_risk_assessment] ✅ FOUND: {cas_number} in loaded list")
         return {
             "is_risk_target": True,
             "name": compound_info["name"],
@@ -202,6 +204,11 @@ def check_risk_assessment(cas_number):
             "regulation": "労働安全衛生法に基づくラベル表示・SDS交付等の義務対象物質"
         }
 
+    print(f"  [check_risk_assessment] ❌ NOT FOUND: {cas_number} (checked {len(RISK_ASSESSMENT_COMPOUNDS)} compounds)")
+    # 最初の10個のキーを表示（デバッグ用）
+    if len(RISK_ASSESSMENT_COMPOUNDS) > 0:
+        first_keys = list(RISK_ASSESSMENT_COMPOUNDS.keys())[:10]
+        print(f"    First 10 CAS in loaded list: {first_keys}")
     return None
 
 def validate_cas_checkdigit(cas_number):
