@@ -466,6 +466,13 @@
 
                 const data = await ocrResponse.json();
                 console.log('[performOCR] OCR data parsed, texts count:', data.texts ? data.texts.length : 0);
+                console.log('[performOCR] Server response:', {
+                    has_cas: !!data.cas_number,
+                    cas_number: data.cas_number,
+                    has_compound_info: !!data.compound_info,
+                    has_risk_assessment: !!data.risk_assessment,
+                    risk_assessment: data.risk_assessment
+                });
 
                 // 停止中、または停止→再開により世代が変わった場合は古い結果を破棄
                 if (shouldStop || myGeneration !== scanGeneration) {

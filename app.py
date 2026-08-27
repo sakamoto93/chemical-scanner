@@ -113,7 +113,15 @@ def load_risk_assessment_list():
         return False
 
 # サーバー起動時にリスト読み込み
+print("\n" + "="*60)
+print("🔍 Risk Assessment System Initialization")
+print("="*60)
 load_risk_assessment_list()
+if RISK_ASSESSMENT_METADATA.get("loaded"):
+    print(f"✅ Risk assessment system ready: {RISK_ASSESSMENT_METADATA.get('total', 0)} compounds loaded")
+else:
+    print("❌ Risk assessment system failed to load")
+print("="*60 + "\n")
 
 def resize_for_ocr(image_array, max_dimension=MAX_OCR_DIMENSION):
     """OCR処理速度向上のため画像をリサイズ（長辺が max_dimension を超える場合のみ縮小）"""
@@ -375,9 +383,12 @@ async def perform_ocr(file: UploadFile = File(...)):
         compound_info = None
         risk_assessment = None
 
+        print(f"[/ocr] Extracted CAS: {cas_number}")
+
         if cas_number:
             # リスク対象化合物をチェック
             risk_assessment = check_risk_assessment(cas_number)
+            print(f"[/ocr] Risk assessment result: {risk_assessment}")
 
             # Phase 1: CAS番号で検索
             compound_info = search_pubchem_by_cas(cas_number)
@@ -395,9 +406,11 @@ async def perform_ocr(file: UploadFile = File(...)):
                     result = search_pubchem_by_name(compound_name)
                     if result:
                         compound_info = result
+                        print(f"[/ocr] Found compound from name '{compound_name}': {result.get('name')}, CAS={result.get('cas')}")
                         # 取得したCAS番号でリスク判定
                         if result.get('cas') and result['cas'] != 'N/A':
                             risk_assessment = check_risk_assessment(result['cas'])
+                            print(f"[/ocr] Risk assessment for {result.get('cas')}: {risk_assessment}")
                         break
 
         return JSONResponse({
