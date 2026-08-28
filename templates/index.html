@@ -46,6 +46,20 @@
                 <button id="add-to-list-btn">リストに追加</button>
             </div>
         </div>
+        <div class="manual-search">
+            <h2>試薬名を手入力して検索</h2>
+            <p style="color: #666; font-size: 0.9em; margin-top: 0;">
+                CAS番号が瓶に記載されていない、または自動読み取りで化合物情報が見つからない場合はこちらから検索してください。
+            </p>
+            <div class="setting-group">
+                <input type="text" id="manual-name-input" placeholder="試薬名を入力（例: Thymol）" style="flex: 1; padding: 8px;">
+                <button id="manual-search-btn">検索</button>
+            </div>
+            <div id="manual-search-results" style="margin-top: 10px;"></div>
+            <div id="manual-add-to-list-container" style="display:none; margin-top: 15px;">
+                <button id="manual-add-to-list-btn">リストに追加</button>
+            </div>
+        </div>
         <div class="compound-list">
             <h2>検出された試薬一覧</h2>
             <table id="compound-table">
@@ -212,6 +226,11 @@
         const exportButtons = document.getElementById('export-buttons');
         const exportExcelBtn = document.getElementById('export-excel-btn');
         const exportCsvBtn = document.getElementById('export-csv-btn');
+        const manualNameInput = document.getElementById('manual-name-input');
+        const manualSearchBtn = document.getElementById('manual-search-btn');
+        const manualSearchResults = document.getElementById('manual-search-results');
+        const manualAddToListContainer = document.getElementById('manual-add-to-list-container');
+        const manualAddToListBtn = document.getElementById('manual-add-to-list-btn');
 
         let isRunning = false;
         let intervalId = null;
@@ -221,6 +240,7 @@
         let startupDelay = 5;
         let scanInterval = 8.0;  // デフォルト8秒（OCR処理時間5-6秒 + バッファ）
         let currentCompoundInfo = null;
+        let currentManualCompoundInfo = null;
         let compoundList = [];
         let isOCRProcessing = false;  // OCR処理中フラグ（同時実行防止）
         let scanGeneration = 0;  // 開始/停止のたびに増加。古い世代のOCR結果を破棄するために使用
@@ -241,30 +261,124 @@
         exportExcelBtn.addEventListener('click', () => exportList('excel'));
         exportCsvBtn.addEventListener('click', () => exportList('csv'));
 
+        // 手動検索ボタンのイベントリスナー
+        manualSearchBtn.addEventListener('click', searchByName);
+        manualNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                searchByName();
+            }
+        });
+        manualAddToListBtn.addEventListener('click', addManualToList);
+
+        // 試薬名を手入力してPubChemを検索
+        async function searchByName() {
+            const compoundName = manualNameInput.value.trim();
+            if (!compoundName) {
+                alert('試薬名を入力してください');
+                return;
+            }
+
+            manualSearchResults.innerHTML = '<p>検索中...</p>';
+            manualAddToListContainer.style.display = 'none';
+            currentManualCompoundInfo = null;
+
+            try {
+                const response = await fetch('/search_by_name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ compound_name: compoundName })
+                });
+                const data = await response.json();
+                console.log('[searchByName] Response:', data);
+
+                if (data.error && !data.compound_info) {
+                    manualSearchResults.innerHTML = `<p class="error">${data.error}</p>`;
+                    return;
+                }
+
+                let html = '';
+
+                if (data.risk_assessment && data.risk_assessment.is_risk_target) {
+                    html += `<div style="background: #ffebee; border-left: 4px solid #d32f2f; padding: 15px; margin: 15px 0; border-radius: 4px;">`;
+                    html += `<p style="color: #d32f2f; font-weight: bold; margin-top: 0;">⚠️ リスク対象化合物</p>`;
+                    html += `<p style="margin: 8px 0; color: #c62828;">この化合物は「${data.risk_assessment.regulation}」に指定されています。</p>`;
+                    if (data.risk_assessment.related_cas && data.risk_assessment.related_cas.length > 1) {
+                        html += `<p style="margin: 8px 0; color: #666; font-size: 0.9em;">関連CAS番号: ${data.risk_assessment.related_cas.join(', ')}</p>`;
+                    }
+                    html += `<p style="margin: 8px 0; color: #666; font-size: 0.9em;">法令に基づくラベル表示・SDS交付等が義務付けられます。</p>`;
+                    html += `</div>`;
+                }
+
+                const info = data.compound_info;
+                if (info.cas && info.cas !== 'N/A') {
+                    html += `<p><strong>CAS番号:</strong> ${info.cas}</p>`;
+                }
+                html += `<p><strong>化合物名:</strong> ${info.name}</p>`;
+                if (info.common_name) {
+                    html += `<p><strong>通称名:</strong> ${info.common_name}</p>`;
+                }
+                html += `<p><strong>分子式:</strong> ${info.formula}</p>`;
+                html += `<p><strong>分子量:</strong> ${info.weight}</p>`;
+
+                manualSearchResults.innerHTML = html;
+
+                currentManualCompoundInfo = {
+                    ...info,
+                    commonName: info.common_name || '',
+                    riskAssessment: data.risk_assessment || null
+                };
+                manualAddToListContainer.style.display = 'block';
+            } catch (error) {
+                console.error('[searchByName] Exception:', error);
+                manualSearchResults.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            }
+        }
+
+        // 手動検索結果をリストに追加
+        function addManualToList() {
+            if (!pushCompoundToList(currentManualCompoundInfo)) {
+                return;
+            }
+
+            manualSearchResults.innerHTML = '<p>リストに追加しました</p>';
+            currentManualCompoundInfo = null;
+            manualAddToListContainer.style.display = 'none';
+            manualNameInput.value = '';
+        }
+
         // テキスト配列をJSON文字列に変換（比較用）
         function textsToString(texts) {
             return JSON.stringify(texts.map(item => item.text));
         }
 
-        // リストにアイテムを追加
-        function addToList() {
-            if (!currentCompoundInfo) {
+        // compoundInfo をリスト用アイテムに変換してリストに追加する共通処理
+        // （OCR自動読み取り・手動検索の両方から使用）
+        function pushCompoundToList(compoundInfo) {
+            if (!compoundInfo) {
                 alert('追加する化合物情報がありません');
-                return;
+                return false;
             }
 
             const item = {
-                cas: currentCompoundInfo.cas || 'N/A',
-                name: currentCompoundInfo.name,
-                commonName: currentCompoundInfo.commonName || '',
-                formula: currentCompoundInfo.formula,
-                weight: currentCompoundInfo.weight,
-                riskAssessment: currentCompoundInfo.riskAssessment || null
+                cas: compoundInfo.cas || 'N/A',
+                name: compoundInfo.name,
+                commonName: compoundInfo.commonName || '',
+                formula: compoundInfo.formula,
+                weight: compoundInfo.weight,
+                riskAssessment: compoundInfo.riskAssessment || null
             };
 
             compoundList.push(item);
-            console.log('[addToList] Added item with riskAssessment:', item.riskAssessment);
+            console.log('[pushCompoundToList] Added item with riskAssessment:', item.riskAssessment);
             updateCompoundTable();
+            return true;
+        }
+
+        // リストにアイテムを追加（自動スキャンのOCR結果から）
+        function addToList() {
+            if (!pushCompoundToList(currentCompoundInfo)) {
+                return;
+            }
 
             // リスト追加後にOCR結果をクリアしてスムーズに次のスキャンに進む
             ocrResults.innerHTML = '<p>次の試薬を読み取り中...</p>';

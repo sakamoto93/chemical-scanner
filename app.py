@@ -308,6 +308,14 @@ def search_pubchem_by_name(compound_name):
         pass
     return None
 
+def search_compound_by_name_with_risk(compound_name):
+    """化合物名でPubChem検索し、取得したCAS番号でリスク判定も行う"""
+    compound_info = search_pubchem_by_name(compound_name)
+    risk_assessment = None
+    if compound_info and compound_info.get('cas') and compound_info['cas'] != 'N/A':
+        risk_assessment = check_risk_assessment(compound_info['cas'])
+    return compound_info, risk_assessment
+
 def get_camera_frame():
     cap = cv2.VideoCapture(0)
 
@@ -420,14 +428,12 @@ async def perform_ocr(file: UploadFile = File(...)):
 
                 # 信頼度が一定以上のテキストのみ検索
                 if confidence >= 0.85:
-                    result = search_pubchem_by_name(compound_name)
+                    result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
                     if result:
                         compound_info = result
+                        risk_assessment = name_risk_assessment
                         print(f"[/ocr] Found compound from name '{compound_name}': {result.get('name')}, CAS={result.get('cas')}")
-                        # 取得したCAS番号でリスク判定
-                        if result.get('cas') and result['cas'] != 'N/A':
-                            risk_assessment = check_risk_assessment(result['cas'])
-                            print(f"[/ocr] Risk assessment for {result.get('cas')}: {risk_assessment}")
+                        print(f"[/ocr] Risk assessment for {result.get('cas')}: {risk_assessment}")
                         break
 
         response_data = {
@@ -439,6 +445,39 @@ async def perform_ocr(file: UploadFile = File(...)):
         }
         print(f"[/ocr] Final response: all_cas_numbers={cas_numbers}, primary_cas={cas_number}, has_risk_assessment={risk_assessment is not None}")
         return JSONResponse(response_data)
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
+
+@app.post("/search_by_name")
+async def search_by_name(data: dict):
+    """試薬名を手入力してPubChem検索し、CAS番号・リスク判定を行う
+
+    OCRでCAS番号が読み取れない、あるいは化合物名がPubChemの検索に
+    うまくヒットしない試薬瓶に対して、ユーザーが試薬名を直接入力して
+    検索できるようにするためのエンドポイント。
+    """
+    try:
+        compound_name = data.get("compound_name", "").strip()
+        if not compound_name:
+            return JSONResponse({"error": "化合物名を入力してください"}, status_code=400)
+
+        print(f"[/search_by_name] Searching for: {compound_name}")
+        compound_info, risk_assessment = search_compound_by_name_with_risk(compound_name)
+
+        if not compound_info:
+            print(f"[/search_by_name] Not found: {compound_name}")
+            return JSONResponse({
+                "compound_info": None,
+                "risk_assessment": None,
+                "error": f"「{compound_name}」はPubChemで見つかりませんでした"
+            })
+
+        print(f"[/search_by_name] Found: {compound_info.get('name')}, CAS={compound_info.get('cas')}, risk={risk_assessment is not None}")
+        return JSONResponse({
+            "compound_info": compound_info,
+            "risk_assessment": risk_assessment
+        })
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
