@@ -26,125 +26,68 @@ RISK_ASSESSMENT_COMPOUNDS = {}
 RISK_ASSESSMENT_METADATA = {}
 
 def load_risk_assessment_list():
-    """労働安全衛生法に基づくリスク対象化合物リストを読み込む"""
+    """労働安全衛生法に基づくリスク対象化合物リストを読み込む（正規化済みCSV形式）
+
+    CSVフォーマット: cas_number,compound_name,related_cas,source_sheet
+    - related_cas: 同一物質が複数CAS番号を持つ場合、カンマ区切りで全CAS番号を保持
+      （元のExcelで「71-23-8, 67-63-0」のように1セルに複数CASがあった行は、
+       移行スクリプト scripts/migrate_risk_assessment.py によって
+       CAS番号ごとに1行ずつに分割済み。そのためどちらのCAS番号で検索しても
+       同じ related_cas を持つレコードがヒットする）
+
+    元の複数シートExcelファイルからこのCSVを生成するには:
+      python scripts/migrate_risk_assessment.py <元のxlsxファイル> data/risk_assessment.csv
+    """
     global RISK_ASSESSMENT_COMPOUNDS, RISK_ASSESSMENT_METADATA
 
-    # 複数のパスを試す（クラウド環境とローカル環境に対応）
     possible_paths = [
-        "data/risk_assessment.xlsx",  # ローカル: プロジェクトディレクトリ
-        os.path.expanduser("~/data/risk_assessment.xlsx"),  # ホームディレクトリ
-        "/root/.claude/uploads/93a068ea-6a56-579a-a9ec-54340264b31e/d5a5f897-_______________.xlsx",  # クラウド
+        "data/risk_assessment.csv",
+        os.path.expanduser("~/data/risk_assessment.csv"),
     ]
 
     risk_list_file = None
     for path in possible_paths:
         if os.path.exists(path):
             risk_list_file = path
-            file_size = os.path.getsize(path)
             print(f"✅ Found risk assessment file: {path}")
-            print(f"   📊 File size: {file_size} bytes")
             break
         else:
             print(f"   ⏭️  Not found: {path}")
 
     if not risk_list_file:
-        print(f"⚠️  Risk assessment file not found in any location:")
+        print("⚠️  Risk assessment file not found in any location:")
         for path in possible_paths:
             print(f"    - {path}")
-        print("📋 To enable risk assessment, place 'risk_assessment.xlsx' in the 'data/' directory")
+        print("📋 To enable risk assessment, place 'risk_assessment.csv' in the 'data/' directory")
+        print("   (元のExcelファイルから生成する場合は scripts/migrate_risk_assessment.py を使用)")
         return False
 
     try:
-        wb = openpyxl.load_workbook(risk_list_file, data_only=True)
+        with open(risk_list_file, newline='', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                cas_number = row.get("cas_number", "").strip()
+                compound_name = row.get("compound_name", "").strip()
+                related_cas_str = row.get("related_cas", "").strip()
+                source_sheet = row.get("source_sheet", "").strip()
 
-        # 全シートを処理（複数の年度版が存在）
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            print(f"📋 Loading risk assessment compounds from sheet: {sheet_name}")
-
-            # ヘッダー行を探す
-            header_row = None
-            cas_col = None
-            name_col = None
-
-            for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
-                if row_idx > 50:  # 最初の50行をスキャン
-                    break
-
-                # ヘッダー行の判定
-                if row and any(cell and ('名称' in str(cell) or 'CAS' in str(cell) or '化合物' in str(cell)) for cell in row):
-                    header_row = row_idx
-                    # 列の位置を特定（複数の表記に対応）
-                    for col_idx, cell_val in enumerate(row):
-                        if cell_val:
-                            cell_str = str(cell_val).lower()
-                            # 化合物名列を探す（「名称」「化合物名」「Name」などに対応）
-                            if any(term in str(cell_val) for term in ['名称', '化合物名', 'Name', '名前']):
-                                name_col = col_idx
-                            # CAS番号列を探す（「CAS番号」「CAS」などに対応）
-                            if 'cas' in cell_str:
-                                cas_col = col_idx
-                    print(f"  → Header row {header_row}: name_col={name_col}, cas_col={cas_col}, row={row}")
-                    break
-
-            if not header_row:
-                print(f"  ⚠️  Header row not found in {sheet_name}")
-                # デバッグ用：最初の5行を表示
-                print(f"  📄 First 5 rows of {sheet_name}:")
-                for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
-                    if row_idx <= 5:
-                        print(f"    Row {row_idx}: {row}")
-                    else:
-                        break
-                continue
-
-            # データ行を処理
-            for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
-                if row_idx <= header_row:
+                if not cas_number or not compound_name:
                     continue
 
-                if not row or all(cell is None for cell in row):
-                    continue
+                related_cas = [c.strip() for c in related_cas_str.split(",") if c.strip()] or [cas_number]
 
-                cas_number = None
-                compound_name = None
-
-                if cas_col is not None and cas_col < len(row):
-                    cas_val = row[cas_col]
-                    if cas_val:
-                        # CAS番号の形式を抽出（例：91-94-1他 → 91-94-1）
-                        cas_str = str(cas_val).strip()
-                        cas_match = re.search(r'\d{2,7}-\d{2}-\d', cas_str)
-                        if cas_match:
-                            cas_number = cas_match.group(0)
-
-                if name_col is not None and name_col < len(row):
-                    name_val = row[name_col]
-                    if name_val:
-                        compound_name = str(name_val).strip()
-
-                # CAS番号で登録
-                if cas_number and compound_name:
-                    if cas_number not in RISK_ASSESSMENT_COMPOUNDS:
-                        RISK_ASSESSMENT_COMPOUNDS[cas_number] = {
-                            "name": compound_name,
-                            "sheet": sheet_name,
-                            "detected": False
-                        }
-                        # デバッグ: 最初の数件をログ出力
-                        if len(RISK_ASSESSMENT_COMPOUNDS) <= 5:
-                            print(f"    📝 Loaded: {cas_number} -> {compound_name}")
+                RISK_ASSESSMENT_COMPOUNDS[cas_number] = {
+                    "name": compound_name,
+                    "related_cas": related_cas,
+                    "sheet": source_sheet,
+                }
 
         total_compounds = len(RISK_ASSESSMENT_COMPOUNDS)
         print(f"✅ Loaded {total_compounds} risk assessment compounds")
-
-        # ロード済み化合物の最初の数件を表示（デバッグ用）
         if RISK_ASSESSMENT_COMPOUNDS:
             print("   📋 Sample loaded compounds:")
             for i, (cas, info) in enumerate(list(RISK_ASSESSMENT_COMPOUNDS.items())[:5]):
-                print(f"      - {cas}: {info['name']} (sheet: {info['sheet']})")
-            if total_compounds > 5:
-                print(f"      ... and {total_compounds - 5} more")
+                print(f"      - {cas}: {info['name']}")
 
         RISK_ASSESSMENT_METADATA["loaded"] = True
         RISK_ASSESSMENT_METADATA["total"] = total_compounds
@@ -192,19 +135,25 @@ def extract_cas_numbers(texts):
     return cas_numbers if cas_numbers else None
 
 def check_risk_assessment(cas_number):
-    """CAS番号がリスク対象化合物リストに含まれているか確認"""
+    """CAS番号がリスク対象化合物リストに含まれているか確認
+
+    1つの物質が複数のCAS番号を持つ場合（related_cas）、
+    そのうちどのCAS番号で検索してもこの関数は同じレコードをヒットさせる。
+    これはロード時（load_risk_assessment_list）に、複数CAS番号を持つ行を
+    CAS番号ごとの個別キーとしてすべて登録しているため。
+    """
     if not cas_number or not RISK_ASSESSMENT_COMPOUNDS:
         print(f"  [check_risk_assessment] Skipped: cas_number={cas_number}, compounds_loaded={len(RISK_ASSESSMENT_COMPOUNDS)}")
         return None
 
     if cas_number in RISK_ASSESSMENT_COMPOUNDS:
         compound_info = RISK_ASSESSMENT_COMPOUNDS[cas_number]
-        compound_info["detected"] = True  # 検出済みとしてマーク
         print(f"  [check_risk_assessment] ✅ FOUND: {cas_number} in loaded list")
         return {
             "is_risk_target": True,
             "name": compound_info["name"],
             "sheet": compound_info["sheet"],
+            "related_cas": compound_info["related_cas"],
             "regulation": "労働安全衛生法に基づくラベル表示・SDS交付等の義務対象物質"
         }
 
