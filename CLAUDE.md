@@ -3012,3 +3012,61 @@ OCRで試薬瓶のラベル自体はうまく読み取れているのに、抽�
    - 必要であればカメラ選択UI（`VideoCapture(1)`, `(2)`等の切り替え）を追加
 2. Webcam経由での試薬読み取り精度・速度を内蔵カメラと比較
 3. 複数ユーザー運用（各自PC+Webcam）を想定した動作確認
+
+---
+
+## Webcam接続・実機テスト完了（8月31日）
+
+### 実装内容
+
+**カメラインデックス選択機能を追加**
+
+複数カメラ（内蔵カメラ＋外付けWebcam）が接続された環境で、`cv2.VideoCapture(0)`
+がどちらを掴むかは環境依存のため、環境変数で切り替えられるようにした。
+
+```python
+# app.py
+CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
+```
+
+```bash
+# 使用例（Webcamがindex 1の場合）
+CAMERA_INDEX=1 python app.py
+```
+
+**カメラ判別用の診断スクリプト `scripts/find_camera.py` を新規作成**
+
+- index 0〜4を順番に試し、各インデックスから1フレームずつ撮影して
+  `scripts/camera_test_output/` に保存
+- ユーザーが画像を見比べて、どのインデックスが外付けWebcamかを目視で判別できる
+
+### 実機テスト結果
+
+- ✅ `python scripts/find_camera.py` 実行 → index 0, 1 で撮影成功（index 2以降は
+  無関係なOBSENSORドライバのエラーで問題なし）
+- ✅ `camera_0.jpg` が外付けWebcamの映像と判明
+  → 偶然 index 0 がすでにWebcamを指しており、環境変数の指定は不要と判明
+- ✅ 通常通り `python app.py` で起動し、ブラウザ (`http://localhost:8000`) で
+  Webcamのライブ映像表示を確認
+- ✅ 試薬瓶の読み取り・OCR動作も正常に確認
+
+### コミット
+
+- `801f212` feat: Support selecting camera index via CAMERA_INDEX env var for Webcam setup
+
+### ステータス
+
+- **Webcam方式の実機テスト**: ✅ 完了
+  - USB Webcam接続 ✅
+  - カメラインデックス判別・選択機能 ✅
+  - ライブ映像表示・OCR動作確認 ✅
+
+**次のマイルストーン：**
+- 複数ユーザー運用（各自PC＋Webcam）での並行動作確認
+- Step1-5 Phase2（ローカルストレージでのリスト永続化・並び替え機能）
+- Step2（リスクアセスメント情報のさらなる充実：SDSリンク、GHS分類など）
+
+---
+
+**記録日:** 2026-08-31
+**ステータス**: Webcam方式 実機テスト完了 ✅
