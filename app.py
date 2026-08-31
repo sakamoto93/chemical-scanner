@@ -21,6 +21,11 @@ ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 MAX_OCR_DIMENSION = 1200  # OCR処理時間短縮のため、長辺をこのサイズに制限
 
+# 使用するカメラのインデックス（複数カメラ接続時に外付けWebcamを選択するため）
+# 環境変数 CAMERA_INDEX で切り替え可能。例: CAMERA_INDEX=1 python app.py
+CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
+print(f"📷 Using camera index: {CAMERA_INDEX} (環境変数 CAMERA_INDEX で変更可能)")
+
 # リスク対象化合物リストをグローバルにロード
 RISK_ASSESSMENT_COMPOUNDS = {}
 RISK_ASSESSMENT_METADATA = {}
@@ -317,7 +322,7 @@ def search_compound_by_name_with_risk(compound_name):
     return compound_info, risk_assessment
 
 def get_camera_frame():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_INDEX)
 
     while True:
         ret, frame = cap.read()
@@ -346,7 +351,7 @@ async def video_feed():
     )
 @app.get("/capture")
 async def capture_frame():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_INDEX)
     ret, frame = cap.read()
     cap.release()
     
