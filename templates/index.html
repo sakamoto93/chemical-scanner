@@ -577,7 +577,15 @@
                 console.log('[performOCR] OCR response received in', (ocrEnd - ocrStart).toFixed(2), 'ms, status:', ocrResponse.status);
 
                 if (!ocrResponse.ok) {
-                    throw new Error(`OCR failed with status ${ocrResponse.status}`);
+                    let serverMessage = '';
+                    try {
+                        const errorBody = await ocrResponse.json();
+                        serverMessage = errorBody.error || '';
+                        console.error('[performOCR] Server error body:', errorBody);
+                    } catch (parseErr) {
+                        console.error('[performOCR] Failed to parse error response body:', parseErr);
+                    }
+                    throw new Error(`OCR failed with status ${ocrResponse.status}${serverMessage ? ': ' + serverMessage : ''}`);
                 }
 
                 const data = await ocrResponse.json();

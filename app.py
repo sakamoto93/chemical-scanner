@@ -458,7 +458,10 @@ async def perform_ocr(file: UploadFile = File(...)):
         return JSONResponse(response_data)
     except Exception as e:
         import traceback
-        return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
+        tb = traceback.format_exc()
+        print(f"[/ocr] ❌ Exception: {e}")
+        print(tb)
+        return JSONResponse({"error": str(e), "traceback": tb}, status_code=400)
 
 @app.post("/search_by_name")
 async def search_by_name(data: dict):
