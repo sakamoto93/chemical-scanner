@@ -3070,3 +3070,233 @@ CAMERA_INDEX=1 python app.py
 
 **記録日:** 2026-08-31
 **ステータス**: Webcam方式 実機テスト完了 ✅
+
+---
+
+## 化学物質管理簿.xlsx のCAS番号・リスクアセスメント対象判定（9月9日）
+
+### 依頼内容
+
+既存の「化学物質管理簿.xlsx」（主に劇物管理台帳）を分析し、CAS番号の
+追加とリスクアセスメント対象物質判定の方法を検討してほしいという依頼。
+対象は「管理簿」シートに加え、「検索されない劇物、有毒」シートも含む。
+
+### ファイル構成の分析
+
+3シート構成であることが判明：
+
+| シート | 役割 |
+|---|---|
+| 管理簿 | 実在庫管理台帳（381行、実データ101件） |
+| 化学物質一覧（書込み不可） | 毒物及び劇物取締法対象物質マスタ（800件、CAS番号列を保有） |
+| 検索されない劇物、有毒 | マスタ検索にヒットしなかった有害物質（59件、CAS番号なし） |
+
+**重要な発見**：「管理簿」は `=VLOOKUP(C7,生工研No,17)` という数式で
+「化学物質一覧」シートから名称を自動引用する構造になっており、その
+「化学物質一覧」シートには**既にCAS番号列が存在**していた。つまり、
+生工研No.を使って化学物質一覧を逆引きするだけで、外部検索なしに
+CAS番号を取得できることが分かった。
+
+**実データ検証結果**：
+- 管理簿101件中 **99件が自動でCAS番号取得可能**
+- そのうち **84件が労働安全衛生法のリスクアセスメント対象**
+- 2件（シュウ酸アルミニウム、酢酸亜鉛）は生工研No.が「735？」
+  「608-619」とあいまいな手入力のため要確認フラグのみ付与（自動判定せず）
+
+「検索されない劇物、有毒」シート（59件）については、PubChemの
+化合物名検索でCASを取得する方針とし、日本語名→英語名の変換テーブル
+（JP_TO_EN、59件分）を作成。特に「DTT」「4,4'-DTT」「2,4'-DTT」が
+「alpha/beta/gamma/delta-HCH」「prochloraz」という有機塩素系農薬
+（第一種特定化学物質）のグループ内にあることから、**生化学試薬の
+ジチオスレイトールではなくDDTの誤記・略記の可能性が高い**という
+重要な指摘を含め、不確実な項目はすべて「備考」欄で明示。
+
+### 実装したスクリプト
+
+- **`scripts/process_management_ledger.py`**: 管理簿シートにCAS番号・
+  リスク対象判定列を自動追記（ネットワーク不要。実データで99/101件・
+  84件のリスク対象判定を検証済み）
+- **`scripts/lookup_unlisted_toxic.py`**: 検索されない劇物、有毒シートを
+  PubChem検索してCAS・リスク判定を行う（要ネットワーク、Mac/Windows環境
+  での実行が必要。モックデータでパイプライン全体の動作を検証済み）
+
+### コミット
+
+- `b400387` feat: Add CAS lookup and risk assessment scripts for management ledger
+
+### ステータス
+
+- 分析・スクリプト実装完了 ✅
+- ユーザーによる実行・確認は未実施（次回作業）
+
+---
+
+## Windows環境への展開（9月9日〜10日）
+
+### 背景
+
+これまでMacで動作確認してきたシステムを、他のメンバーにもテストして
+もらうため、Windows PCへの展開を開始。並行してMac版のセットアップ
+マニュアル `MANUAL.md` を作成済みだったので、Windows版 `MANUAL_WINDOWS.md`
+も新規作成（コミット `257d291`）。
+
+### 発生した問題と対応（すべてWindows特有）
+
+#### 1. `git clone` でmainブランチが取得されてしまう
+
+**症状**：`git clone https://.../chemical-scanner.git` を実行すると、
+デフォルトの `main` ブランチ（開発中の機能が反映されていない古い状態）
+が取得され、`data/`・`scripts/` フォルダやMANUAL.md等が存在しない状態
+になった。
+
+**対応**：`git clone -b claude/chemical-scanner-files-f1gxcu ...`
+のように、ブランチを明示的に指定するようMANUAL.md / MANUAL_WINDOWS.md
+の両方を修正（コミット `cd11a4b`）。この問題はMacでも起こり得るため、
+両マニュアルとも修正した。
+
+#### 2. `paddlepaddle` が見つからない
+
+**症状**：`pip install -r requirements.txt` 実行後、`python app.py` で
+`ModuleNotFoundError: No module named 'paddlepaddle'`。
+
+**原因**：`paddleocr` パッケージは推論エンジン本体である `paddlepaddle`
+を自動インストールしない場合がある。
+
+**対応**：`requirements.txt` に `paddlepaddle>=2.5.0` を明示的に追加
+（コミット `7ee896f`）。
+
+#### 3. カメラのMSMFバックエンドでフレーム取得失敗
+
+**症状**：`/capture` が15秒以上かかる異常な遅延、`cap_msmf.cpp` の
+警告（`OnReadSample() is called with error status`）、`/ocr` が
+400エラーを返す。
+
+**原因**：OpenCVがWindowsで標準使用するMSMF(Media Foundation)
+バックエンドが、使用中のUSB Webcamとの相性問題でフレーム取得に失敗する
+既知の問題。
+
+**対応**：`platform.system() == "Windows"` の場合のみ
+`cv2.CAP_DSHOW`（DirectShow）バックエンドを明示的に指定するよう変更
+（コミット `11a4d19`）。Mac/Linuxは従来通り `cv2.CAP_ANY`。
+→ キャプチャ時間が15秒以上 → 347msに改善。
+
+#### 4. エラー内容が画面にもターミナルにも表示されない
+
+上記の調査中、フロントエンドが `/ocr` の400エラー時にレスポンス
+ボディ（実際のPython例外メッセージ）を読まずに `throw new Error(...)`
+していたため、汎用的な「OCR failed with status 400」としか表示され
+なかった。バックエンド側もターミナルへの出力がなく、原因調査が
+できない状態だった。
+
+**対応**：フロントエンドはエラー時もJSONボディをパースして
+`data.error` を表示、バックエンドは例外発生時にターミナルにも
+トレースバックを出力するよう修正（コミット `a4fd5cd`）。これにより
+以降の問題の原因特定が可能になった。
+
+#### 5. PaddleOCR: oneDNN(MKL-DNN) + PIR実行エンジンの互換性バグ
+
+**症状**（上記4の修正で判明）：
+```
+NotImplementedError: (Unimplemented) ConvertPirAttribute2RuntimeAttribute
+not support [pir::ArrayAttribute<pir::DoubleAttribute>]
+(at ..\paddle\fluid\framework\new_executor\instruction\onednn\onednn_instruction.cc:118)
+```
+
+**調査**：paddleocr 3.7.0 / paddlex 3.7.2 のソースコードを実際に
+インストールして調査（`pip install --ignore-installed PyYAML paddleocr`
+でこのクラウド環境にも同バージョンを再現）。CPU推論時にデフォルトで
+有効化されるoneDNNアクセラレーションと、新しい実行エンジン（PIR）の
+組み合わせで、一部の演算属性（double配列）の変換が未実装であることが
+根本原因と判明。
+
+最初 `PaddleOCR(..., enable_mkldnn=False)` という修正を入れたが、
+これは実在しないパラメータ名で効果がなかった（`inspect.signature` で
+実際のコンストラクタ引数を確認し判明）。正しくは、
+`paddlex/utils/flags.py` が読む環境変数
+`PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT` で制御されることを、
+`paddlex/inference/models/runners/paddle_static/config/pp_option.py`
+のソースを辿って特定した。
+
+**対応**：`from paddleocr import PaddleOCR` より前に
+`os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")`
+を設定するよう変更（コミット `2d71f94`）。環境変数が正しくbool型`False`
+として読み込まれることを実際に検証済み。
+→ OCRがWindowsで正常動作するようになった（ただしoneDNN無効化により
+  処理速度は低下：後述）。
+
+#### 6. 1回目の読み取り後、ライブ映像が固着する
+
+**症状**：1回目のOCR読み取りは成功するが、その後停止・再開しても
+カメラのライブプレビュー映像が最初のフレームで固まり、以降の自動
+スキャンが実質的に機能しなくなった。ただしサーバーログ上は`/capture`
+`/ocr` の呼び出し自体は継続しており、実際に検出結果も変化していた
+（アデニン CAS=73-24-5 等）ことから、固着していたのは裏側のOCR処理
+ではなく画面上のライブプレビューだけと判明。
+
+**原因**：`/video_feed`（常時ストリーミングのライブプレビュー）と
+`/capture`（OCR用スナップショット、リクエストごとに開閉）が、それぞれ
+独立して `cv2.VideoCapture(CAMERA_INDEX)` で同じカメラデバイスを
+開いていた。WindowsのDirectShowバックエンドは同一カメラへの複数
+ハンドルからの同時アクセスに弱く、競合すると常時ストリーミング中の
+プレビュー側の映像取得が止まることがある。
+
+**対応**：`get_shared_camera()` を新設し、アプリ全体で単一の
+`cv2.VideoCapture` ハンドルを遅延初期化・共有する方式に変更
+（コミット `ac513f4`）。`/video_feed` `/capture` 両方がこの共有
+ハンドルを使い、`cap.read()` は `threading.Lock` で排他制御。
+毎回開いて `release()` する従来方式を廃止し、カメラは一度開いたら
+維持し続ける方式に統一。
+
+#### 7. Windowsでの読み取り速度・精度がMacより劣る
+
+ユーザー報告：「Windowsだと読み取り速度と精度がMacより悪い気がした」
+
+**速度低下の原因**：上記5で安定性のために無効化したoneDNN
+アクセラレーションの影響。Macで問題なく動いていたのは、Apple
+Siliconがそもそも oneDNN（Intel CPU向け最適化ライブラリ）に依存
+していないため。この点は今回未対応（安定性とのトレードオフとして
+許容）。
+
+**精度低下の原因**：サーバーログで、Windows側のキャプチャ画像が
+`(480, 640)`（640x480 VGA）という低解像度になっていたことを発見
+（Mac側は1920x1080で撮影・1200pxにリサイズ）。OpenCVがWindowsの
+カメラデフォルト解像度をそのまま使用し、明示的に高解像度を要求して
+いなかったことが原因と判断。
+
+**対応**：`get_shared_camera()` でカメラオープン後に
+`cv2.CAP_PROP_FRAME_WIDTH/HEIGHT` を1920x1080に明示的に設定する
+よう変更（コミット `cda7ae2`）。対応していない解像度を要求しても
+エラーにはならずドライバが最も近い解像度を自動選択するため、Mac側
+への悪影響はない設計。実際に適用された解像度をサーバー起動ログに
+出力するようにし、Windows環境での確認を容易にした。
+
+### コミット一覧（Windows対応関連）
+
+- `257d291` docs: Add Windows setup manual (MANUAL_WINDOWS.md)
+- `cd11a4b` fix: Specify branch explicitly in git clone instructions
+- `7ee896f` fix: Add paddlepaddle as explicit dependency in requirements.txt
+- `11a4d19` fix: Use DirectShow backend for camera capture on Windows
+- `a4fd5cd` fix: Surface actual server error message instead of generic HTTP status
+- `2d71f94` fix: Disable oneDNN by default to avoid PIR/MKL-DNN crash on Windows
+- `ac513f4` fix: Share a single camera handle between video_feed and capture
+- `cda7ae2` fix: Request higher camera resolution to improve OCR accuracy on Windows
+
+### ステータス
+
+- **Windows環境での基本動作**: ✅ 達成（Macと同等の操作が可能に）
+- **速度**: ⚠️ Macより低速（oneDNN無効化によるトレードオフ、未解決）
+- **精度**: 🔧 解像度修正を適用したが、ユーザーによる実機確認は未実施
+
+**次回アクション（ユーザーが翌日以降に確認予定）：**
+1. `git pull` して最新コードを反映
+2. 起動ログで `📷 Camera resolution requested 1920x1080, actual: ...`
+   の実際の値を確認
+3. 解像度修正後の読み取り精度がMacと同等程度に改善したか確認
+4. 速度については、現状oneDNNを無効化したままでの運用となる見込み
+   （さらなる高速化が必要であれば、原因となっている特定モデル演算の
+   MKLDNN_BLOCKLIST登録など、より踏み込んだ対応を別途検討）
+
+---
+
+**記録日:** 2026-09-10
+**ステータス**: Windows環境での動作確認・主要な不具合修正 完了 🔧 → ユーザーによる精度・速度の実機確認待ち
