@@ -41,6 +41,22 @@ print(f"📷 Using camera index: {CAMERA_INDEX} (環境変数 CAMERA_INDEX で�
 import platform
 CAMERA_BACKEND = cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
 
+# カメラを常に単一のVideoCaptureハンドルで共有する。
+# /video_feed（ライブプレビュー）と /capture（OCR用スナップショット）が
+# それぞれ別々に cv2.VideoCapture を開くと、Windows(DirectShow)では
+# 同一カメラへの同時アクセスが競合し、映像取得が停止・固着することがある。
+import threading
+CAMERA_LOCK = threading.Lock()
+_shared_camera_cap = None
+
+def get_shared_camera():
+    """アプリ全体で共有する単一のカメラハンドルを返す（遅延初期化）"""
+    global _shared_camera_cap
+    with CAMERA_LOCK:
+        if _shared_camera_cap is None or not _shared_camera_cap.isOpened():
+            _shared_camera_cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
+    return _shared_camera_cap
+
 # リスク対象化合物リストをグローバルにロード
 RISK_ASSESSMENT_COMPOUNDS = {}
 RISK_ASSESSMENT_METADATA = {}
@@ -337,10 +353,11 @@ def search_compound_by_name_with_risk(compound_name):
     return compound_info, risk_assessment
 
 def get_camera_frame():
-    cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
+    cap = get_shared_camera()
 
     while True:
-        ret, frame = cap.read()
+        with CAMERA_LOCK:
+            ret, frame = cap.read()
         if not ret:
             break
 
@@ -366,13 +383,13 @@ async def video_feed():
     )
 @app.get("/capture")
 async def capture_frame():
-    cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
-    ret, frame = cap.read()
-    cap.release()
-    
+    cap = get_shared_camera()
+    with CAMERA_LOCK:
+        ret, frame = cap.read()
+
     if not ret:
         return JSONResponse({"error": "Failed to capture frame"}, status_code=400)
-    
+
     ret, buffer = cv2.imencode('.jpg', frame)
     frame_bytes = buffer.tobytes()
     
