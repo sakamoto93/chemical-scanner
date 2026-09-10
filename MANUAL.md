@@ -38,11 +38,13 @@ conda --version
 ターミナルで、アプリを置きたい場所に移動してから以下を実行します。
 
 ```bash
-git clone https://github.com/sakamoto93/chemical-scanner.git
+git clone -b claude/chemical-scanner-files-f1gxcu https://github.com/sakamoto93/chemical-scanner.git
 cd chemical-scanner
 ```
 
 `git` が入っていない場合は、Xcode Command Line Tools のインストールを促されるので、指示に従ってインストールしてください（`xcode-select --install`）。
+
+> **重要**：`-b claude/chemical-scanner-files-f1gxcu` を付けずに `git clone` すると、まだ開発中の機能（Webcam対応、リスクアセスメント判定、手動検索など）が含まれていない古い `main` ブランチが取得されてしまいます。必ず上記のコマンドをそのままコピーして実行してください。
 
 ### 2-3. Python仮想環境の作成
 

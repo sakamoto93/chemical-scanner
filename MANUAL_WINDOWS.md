@@ -46,11 +46,20 @@ git --version
 
 ```bat
 cd Desktop
-git clone https://github.com/sakamoto93/chemical-scanner.git
+git clone -b claude/chemical-scanner-files-f1gxcu https://github.com/sakamoto93/chemical-scanner.git
 cd chemical-scanner
 ```
 
 （`cd Desktop` の部分は、アプリを置きたい場所に読み替えてください）
+
+> **重要**：`-b claude/chemical-scanner-files-f1gxcu` を付けずに `git clone` すると、まだ開発中の機能（Webcam対応、リスクアセスメント判定、手動検索など）が含まれていない古い `main` ブランチが取得されてしまいます。必ず上記のコマンドをそのままコピーして実行してください。
+>
+> もし既に `-b` なしでクローンしてしまった場合は、以下でブランチを切り替えてください。
+> ```bat
+> cd chemical-scanner
+> git checkout claude/chemical-scanner-files-f1gxcu
+> git pull origin claude/chemical-scanner-files-f1gxcu
+> ```
 
 ### 2-4. Python仮想環境の作成
 
