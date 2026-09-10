@@ -1,3 +1,13 @@
+import os
+
+# Windows環境でCPU推論時にoneDNN(MKL-DNN)アクセラレーションと新実行エンジン(PIR)の
+# 組み合わせで NotImplementedError
+# (ConvertPirAttribute2RuntimeAttribute not support [pir::ArrayAttribute]) が
+# 発生する既知の不具合を回避するため、PaddleXのMKL-DNNデフォルト有効化を無効化する。
+# この環境変数は paddlex (paddleocrの依存パッケージ) が import 時に読み込むため、
+# `from paddleocr import PaddleOCR` より前に設定する必要がある。
+os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +24,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import pubchempy as pcp
 import openpyxl
-import os
 
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
