@@ -26,6 +26,12 @@ MAX_OCR_DIMENSION = 1200  # OCR処理時間短縮のため、長辺をこのサ�
 CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 print(f"📷 Using camera index: {CAMERA_INDEX} (環境変数 CAMERA_INDEX で変更可能)")
 
+# Windows標準のMSMFバックエンドは一部のUSB Webcamでフレーム取得に失敗する
+# （cap_msmf.cpp のエラー、極端なキャプチャ遅延）ため、Windowsでは
+# DirectShow(CAP_DSHOW)バックエンドを明示的に使用する
+import platform
+CAMERA_BACKEND = cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
+
 # リスク対象化合物リストをグローバルにロード
 RISK_ASSESSMENT_COMPOUNDS = {}
 RISK_ASSESSMENT_METADATA = {}
@@ -322,7 +328,7 @@ def search_compound_by_name_with_risk(compound_name):
     return compound_info, risk_assessment
 
 def get_camera_frame():
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+    cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
 
     while True:
         ret, frame = cap.read()
@@ -351,7 +357,7 @@ async def video_feed():
     )
 @app.get("/capture")
 async def capture_frame():
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+    cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
     ret, frame = cap.read()
     cap.release()
     
