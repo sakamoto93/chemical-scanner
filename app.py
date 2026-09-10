@@ -49,12 +49,24 @@ import threading
 CAMERA_LOCK = threading.Lock()
 _shared_camera_cap = None
 
+# カメラに要求する解像度。Windows(DirectShow)では明示的に指定しないと
+# カメラのデフォルト解像度（VGA/640x480など）で撮影され、OCR精度が
+# 大きく低下することがある。カメラが対応していない解像度を指定しても
+# エラーにはならず、ドライバが対応する最も近い解像度が使われる。
+CAMERA_REQUEST_WIDTH = 1920
+CAMERA_REQUEST_HEIGHT = 1080
+
 def get_shared_camera():
     """アプリ全体で共有する単一のカメラハンドルを返す（遅延初期化）"""
     global _shared_camera_cap
     with CAMERA_LOCK:
         if _shared_camera_cap is None or not _shared_camera_cap.isOpened():
             _shared_camera_cap = cv2.VideoCapture(CAMERA_INDEX, CAMERA_BACKEND)
+            _shared_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_REQUEST_WIDTH)
+            _shared_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_REQUEST_HEIGHT)
+            actual_w = _shared_camera_cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_h = _shared_camera_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            print(f"📷 Camera resolution requested {CAMERA_REQUEST_WIDTH}x{CAMERA_REQUEST_HEIGHT}, actual: {actual_w:.0f}x{actual_h:.0f}")
     return _shared_camera_cap
 
 # リスク対象化合物リストをグローバルにロード
