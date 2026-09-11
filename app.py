@@ -24,6 +24,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import pubchempy as pcp
 import openpyxl
+import requests
+from chemical_name_translator import contains_japanese, translate_japanese_chemical_name
 
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
@@ -375,6 +377,24 @@ def search_compound_by_name_with_risk(compound_name):
         risk_assessment = check_risk_assessment(compound_info['cas'])
     return compound_info, risk_assessment
 
+def get_pubchem_autocomplete_suggestions(term, limit=8):
+    """PubChemのオートコンプリートAPIで、化合物名の候補（前方一致・多少のタイプミス許容）を取得する
+
+    完全一致で見つからなかった場合に「もしかして」候補を提示するために使用。
+    ネットワークエラー時は空リストを返す（失敗しても検索フロー自体は継続させる）。
+    """
+    if not term:
+        return []
+    try:
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/autocomplete/compound/{requests.utils.quote(term)}/json"
+        resp = requests.get(url, params={"limit": limit}, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("dictionary_terms", {}).get("compound", [])
+    except Exception as e:
+        print(f"[autocomplete] Failed for '{term}': {e}")
+    return []
+
 def get_camera_frame():
     cap = get_shared_camera()
 
@@ -519,6 +539,13 @@ async def search_by_name(data: dict):
     OCRでCAS番号が読み取れない、あるいは化合物名がPubChemの検索に
     うまくヒットしない試薬瓶に対して、ユーザーが試薬名を直接入力して
     検索できるようにするためのエンドポイント。
+
+    検索の流れ:
+    1. 入力された名称のまま検索
+    2. 見つからず、かつ日本語が含まれる場合は英語名への変換を試みて再検索
+       （元素名+陰イオン名の機械的変換、または慣用名辞書）
+    3. それでも見つからない場合、PubChemのオートコンプリートAPIで
+       候補（前方一致・多少のタイプミス許容）を提示する
     """
     try:
         compound_name = data.get("compound_name", "").strip()
@@ -527,20 +554,45 @@ async def search_by_name(data: dict):
 
         print(f"[/search_by_name] Searching for: {compound_name}")
         compound_info, risk_assessment = search_compound_by_name_with_risk(compound_name)
+        matched_name = compound_name
+        translated_name = None
+
+        # 日本語名で見つからなかった場合、英語名への変換を試みる
+        if not compound_info and contains_japanese(compound_name):
+            translated_name = translate_japanese_chemical_name(compound_name)
+            if translated_name:
+                print(f"[/search_by_name] Translated '{compound_name}' -> '{translated_name}', retrying search")
+                compound_info, risk_assessment = search_compound_by_name_with_risk(translated_name)
+                if compound_info:
+                    matched_name = translated_name
 
         if not compound_info:
             print(f"[/search_by_name] Not found: {compound_name}")
+            # オートコンプリートAPIで候補を提示（タイプミス・前方一致対応）
+            suggestions = get_pubchem_autocomplete_suggestions(translated_name or compound_name)
+            if not suggestions and translated_name:
+                suggestions = get_pubchem_autocomplete_suggestions(compound_name)
+            print(f"[/search_by_name] Suggestions: {suggestions}")
+
+            error_msg = f"「{compound_name}」はPubChemで見つかりませんでした"
+            if translated_name:
+                error_msg += f"（英語名候補「{translated_name}」でも見つかりませんでした）"
+
             return JSONResponse({
                 "compound_info": None,
                 "risk_assessment": None,
-                "error": f"「{compound_name}」はPubChemで見つかりませんでした"
+                "error": error_msg,
+                "suggestions": suggestions
             })
 
         print(f"[/search_by_name] Found: {compound_info.get('name')}, CAS={compound_info.get('cas')}, risk={risk_assessment is not None}")
-        return JSONResponse({
+        response_data = {
             "compound_info": compound_info,
             "risk_assessment": risk_assessment
-        })
+        }
+        if matched_name != compound_name:
+            response_data["matched_name"] = matched_name
+        return JSONResponse(response_data)
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "traceback": traceback.format_exc()}, status_code=400)
