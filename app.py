@@ -31,9 +31,14 @@ ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 # OCR処理時間短縮のため、長辺をこのサイズに制限
 # 環境変数 OCR_MAX_DIMENSION で調整可能（数値を大きくすると精度優先、
 # 小さくすると速度優先のトレードオフになる）。
+#
 # Windows環境ではoneDNN無効化(PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT)により
-# CPU推論が低速になるため、デフォルト値を1200から960に引き下げて速度を優先している。
-MAX_OCR_DIMENSION = int(os.environ.get("OCR_MAX_DIMENSION", "960"))
+# CPU推論が低速になる。さらに、カメラ解像度を1920x1080に引き上げた
+# ことで、960px設定でも 960x540(518,400px) をOCRに渡すことになり、
+# 以前の640x480ネイティブ撮影時代(307,200px)より画素数が約1.7倍多く、
+# かえって遅くなっていた。処理時間はほぼ画素数に比例するため、
+# 以前と同等以上の速度を得るにはより小さい値が必要。
+MAX_OCR_DIMENSION = int(os.environ.get("OCR_MAX_DIMENSION", "640"))
 print(f"🖼️  OCR max dimension: {MAX_OCR_DIMENSION}px (環境変数 OCR_MAX_DIMENSION で変更可能。大きいほど高精度・低速、小さいほど低精度・高速)")
 
 # 使用するカメラのインデックス（複数カメラ接続時に外付けWebcamを選択するため）
