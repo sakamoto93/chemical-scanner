@@ -28,7 +28,13 @@ import openpyxl
 app = FastAPI()
 ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
-MAX_OCR_DIMENSION = 1200  # OCR処理時間短縮のため、長辺をこのサイズに制限
+# OCR処理時間短縮のため、長辺をこのサイズに制限
+# 環境変数 OCR_MAX_DIMENSION で調整可能（数値を大きくすると精度優先、
+# 小さくすると速度優先のトレードオフになる）。
+# Windows環境ではoneDNN無効化(PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT)により
+# CPU推論が低速になるため、デフォルト値を1200から960に引き下げて速度を優先している。
+MAX_OCR_DIMENSION = int(os.environ.get("OCR_MAX_DIMENSION", "960"))
+print(f"🖼️  OCR max dimension: {MAX_OCR_DIMENSION}px (環境変数 OCR_MAX_DIMENSION で変更可能。大きいほど高精度・低速、小さいほど低精度・高速)")
 
 # 使用するカメラのインデックス（複数カメラ接続時に外付けWebcamを選択するため）
 # 環境変数 CAMERA_INDEX で切り替え可能。例: CAMERA_INDEX=1 python app.py
