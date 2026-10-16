@@ -245,7 +245,11 @@
         // 自動スキャン中に蓄積したOCRテキスト（複数アングル分）。
         // 小さい瓶などで1回の撮影ではラベル全体が視野に収まらない場合、
         // 複数回の読み取り結果を合わせて化合物を特定するために使う。
-        let accumulatedTexts = [];
+        // フレーム（1回の撮影）ごとに配列を分けて保持する：フラットな1つの配列に
+        // まとめてしまうと、1回の撮影内での「検出順＝ラベル上の読み順」という
+        // 前提が崩れ、2行に分かれた化合物名の連結判定がアングルをまたぐと
+        // 正しく働かなくなるため。
+        let accumulatedFrames = [];
         let isOCRProcessing = false;  // OCR処理中フラグ（同時実行防止）
         let scanGeneration = 0;  // 開始/停止のたびに増加。古い世代のOCR結果を破棄するために使用
 
@@ -375,19 +379,22 @@
             return JSON.stringify(texts.map(item => item.text));
         }
 
-        // 新しいフレームのOCRテキストを蓄積リストにマージする（同一テキストは信頼度が高い方を残す）
+        // 新しいフレームのOCRテキストを、1フレーム分の塊として蓄積リストに追加する。
+        // フレームごとの検出順（＝ラベル上の読み順）を保持したまま蓄積することで、
+        // サーバー側で複数アングルをまたいだ2行連結判定が正しく機能する。
+        // 蓄積が際限なく増えないよう、直近の一定フレーム数のみ保持する。
+        const MAX_ACCUMULATED_FRAMES = 10;
         function mergeIntoAccumulated(newTexts) {
-            if (!newTexts) return;
-            newTexts.forEach(newItem => {
-                const existing = accumulatedTexts.find(t => t.text === newItem.text);
-                if (existing) {
-                    if (newItem.confidence > existing.confidence) {
-                        existing.confidence = newItem.confidence;
-                    }
-                } else {
-                    accumulatedTexts.push({ text: newItem.text, confidence: newItem.confidence });
-                }
-            });
+            if (!newTexts || newTexts.length === 0) return;
+            accumulatedFrames.push(newTexts.map(t => ({ text: t.text, confidence: t.confidence })));
+            if (accumulatedFrames.length > MAX_ACCUMULATED_FRAMES) {
+                accumulatedFrames.shift();
+            }
+        }
+
+        // 蓄積済みテキスト（複数アングル分）の総数を返す（重複排除なしの単純カウント）
+        function accumulatedTextCount() {
+            return accumulatedFrames.reduce((sum, frame) => sum + frame.length, 0);
         }
 
         // 蓄積したテキスト（複数アングル分）をまとめてサーバーに送り、化合物を再照合する
@@ -397,7 +404,7 @@
                 const response = await fetch('/identify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ texts: accumulatedTexts })
+                    body: JSON.stringify({ frames: accumulatedFrames })
                 });
                 if (!response.ok) {
                     console.warn('[tryIdentifyFromAccumulated] Request failed with status', response.status);
@@ -447,7 +454,7 @@
             addToListContainer.style.display = 'none';
             addToListContainer.classList.remove('cas-priority');
             previousTexts = [];
-            accumulatedTexts = [];
+            accumulatedFrames = [];
             shouldStop = false;  // 次のスキャン開始のため shouldStop をリセット
             console.log('[addToList] State reset: previousTexts cleared, shouldStop=false');
         }
@@ -693,7 +700,7 @@
                         // 視野に収まらない場合に対応するため。
                         let effectiveData = data;
                         let usedAccumulated = false;
-                        if (!data.compound_info && accumulatedTexts.length > data.texts.length) {
+                        if (!data.compound_info && accumulatedFrames.length > 1 && accumulatedTextCount() > data.texts.length) {
                             const identifyResult = await tryIdentifyFromAccumulated();
                             if (identifyResult && identifyResult.compound_info) {
                                 effectiveData = { texts: data.texts, ...identifyResult };
@@ -835,7 +842,7 @@
                             statusEl.textContent = '実行中...';
                             shouldStop = false;
                             previousTexts = [];  // 新規スキャン時にテキスト履歴をリセット
-                            accumulatedTexts = [];
+                            accumulatedFrames = [];
                             console.log('[Starting OCR] About to call performOCR, flags set to isRunning=true, shouldStop=false, previousTexts cleared');
 
                             // 初回は即座に実行（setTimeoutなし）

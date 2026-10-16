@@ -440,17 +440,26 @@ async def capture_frame():
         iter([frame_bytes]),
         media_type="image/jpeg"
     )
-def identify_compound_from_texts(texts):
+def identify_compound_from_frames(frames):
     """OCRで検出したテキスト群からCAS番号抽出→検索、または化合物名検索を行う共通ロジック。
 
-    /ocr（1フレーム分）と /identify（複数フレーム分を蓄積したテキスト）の両方から呼ばれる。
+    frames は「1回の撮影（1フレーム）で検出されたテキストのリスト」を要素とするリスト。
+    /ocr は1フレーム分（frames=[texts]）、/identify は複数アングル分を蓄積した
+    複数フレーム（frames=[frame1, frame2, ...]）を渡す。
 
     化合物名がラベル上で2行以上に分かれて印字されている場合、OCRはそれぞれを
     別々のテキストとして検出するため、個々の行だけで検索すると見つからないことが多い。
     そこで、個々の行に加えて、OCRの検出順（概ねラベル上の上から下の読み順）で
     隣接する行同士を連結した候補も合わせてPubChem検索にかける。
+
+    この「隣接」判定は同一フレーム内でのみ意味を持つ（PaddleOCRの検出順は
+    1回の撮影内では概ね読み順になるが、複数アングル分をフラットに1つのリストへ
+    混ぜてしまうと、撮影順や重複排除の都合で隣接関係が崩れ、実際にはラベル上で
+    隣接していない行同士を連結してしまったり、逆に本来連結すべき行同士が
+    離れて誤判定を招く）。そのためフレームごとに隣接ペアを作る。
     """
-    cas_numbers = extract_cas_numbers(texts)
+    all_texts = [t for frame in frames for t in frame]
+    cas_numbers = extract_cas_numbers(all_texts)
     cas_number = cas_numbers[0] if cas_numbers else None
     compound_info = None
     risk_assessment = None
@@ -479,17 +488,24 @@ def identify_compound_from_texts(texts):
                 print(f"[identify_compound] Risk assessment result: {risk_assessment}")
     else:
         # Phase 2: 化合物名で検索
-        # 候補1: 個々のテキスト（信頼度の高いものから順に）
-        sorted_texts = sorted(texts, key=lambda x: x['confidence'], reverse=True)
-        candidates = [t['text'] for t in sorted_texts if t['confidence'] >= 0.85]
+        # 候補1: 個々のテキスト（信頼度の高いものから順に、全フレームから重複排除）
+        best_by_text = {}
+        for t in all_texts:
+            existing = best_by_text.get(t['text'])
+            if existing is None or t['confidence'] > existing:
+                best_by_text[t['text']] = t['confidence']
+        candidates = [text for text, conf in
+                      sorted(best_by_text.items(), key=lambda kv: kv[1], reverse=True)
+                      if conf >= 0.85]
 
-        # 候補2: 検出順で隣接する行同士を連結（2行以上に分かれた化合物名対策）
-        for i in range(len(texts) - 1):
-            t1, t2 = texts[i], texts[i + 1]
-            if t1['confidence'] >= 0.7 and t2['confidence'] >= 0.7:
-                merged = f"{t1['text']} {t2['text']}".strip()
-                if merged and merged not in candidates:
-                    candidates.append(merged)
+        # 候補2: 各フレーム内で検出順に隣接する行同士を連結（2行以上に分かれた化合物名対策）
+        for frame in frames:
+            for i in range(len(frame) - 1):
+                t1, t2 = frame[i], frame[i + 1]
+                if t1['confidence'] >= 0.7 and t2['confidence'] >= 0.7:
+                    merged = f"{t1['text']} {t2['text']}".strip()
+                    if merged and merged not in candidates:
+                        candidates.append(merged)
 
         for compound_name in candidates:
             result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
@@ -506,6 +522,10 @@ def identify_compound_from_texts(texts):
         "compound_info": compound_info,
         "risk_assessment": risk_assessment,
     }
+
+def identify_compound_from_texts(texts):
+    """1フレーム分のテキストから化合物を特定する（identify_compound_from_framesの単一フレーム版）"""
+    return identify_compound_from_frames([texts])
 
 @app.post("/ocr")
 async def perform_ocr(file: UploadFile = File(...)):
@@ -563,11 +583,19 @@ async def identify_from_texts(data: dict):
     小さい瓶など、1回の撮影ではラベル全体（化合物名の全行）が視野に収まらない場合に、
     フロントエンド側で複数アングル分のOCR結果を蓄積し、まとめてこのエンドポイントに
     渡すことで、単一フレームでは見つからなかった化合物を特定できるようにするために使う。
+
+    `frames`（フレームごとのテキストリストのリスト）を優先して使用する。各フレーム内での
+    検出順（＝ラベル上の読み順）を保ったまま渡すことで、2行以上に分かれた化合物名の
+    連結判定が複数アングルをまたいでも正しく機能する。後方互換のため、フラットな
+    `texts` のみが渡された場合は単一フレームとして扱う。
     """
     try:
-        texts = data.get("texts", [])
-        result = identify_compound_from_texts(texts)
-        print(f"[/identify] texts_count={len(texts)}, primary_cas={result['cas_number']}, "
+        frames = data.get("frames")
+        if frames is None:
+            frames = [data.get("texts", [])]
+        result = identify_compound_from_frames(frames)
+        text_count = sum(len(f) for f in frames)
+        print(f"[/identify] frames={len(frames)}, texts_count={text_count}, primary_cas={result['cas_number']}, "
               f"has_compound_info={result['compound_info'] is not None}")
         return JSONResponse(result)
     except Exception as e:
