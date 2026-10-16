@@ -720,6 +720,12 @@
                             html += `<p style="color: #1565c0; font-size: 0.9em; margin-top: 8px;">ℹ️ 複数回の読み取り結果を組み合わせて化合物を特定しました（ラベル全体が一度に視野に収まらない小さい瓶などに対応）</p>`;
                         }
 
+                        // OCRの文字誤認識（1文字欠落など）をPubChemのオートコンプリートで
+                        // 補正して見つかった場合、その旨を表示する
+                        if (effectiveData.matched_from_typo) {
+                            html += `<p style="color: #1565c0; font-size: 0.9em; margin-top: 8px;">ℹ️ OCR読み取り結果の誤認識を考慮し、類似名「${effectiveData.matched_from_typo}」で化合物を特定しました</p>`;
+                        }
+
                         // CAS番号が検出されたかどうか
                         const hasCas = !!(effectiveData.cas_number || (effectiveData.cas_numbers && effectiveData.cas_numbers.length > 0));
 

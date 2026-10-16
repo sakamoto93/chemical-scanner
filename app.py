@@ -463,6 +463,7 @@ def identify_compound_from_frames(frames):
     cas_number = cas_numbers[0] if cas_numbers else None
     compound_info = None
     risk_assessment = None
+    matched_from_typo = None
 
     if cas_numbers:
         # すべてのCAS番号に対してリスク判定を実行
@@ -516,11 +517,37 @@ def identify_compound_from_frames(frames):
                 print(f"[identify_compound] Risk assessment for {result.get('cas')}: {risk_assessment}")
                 break
 
+        # Phase 2b: 完全一致で見つからない場合、OCRの文字誤認識（1文字欠落など）を
+        # 考慮し、PubChemのオートコンプリートAPIで近い綴りの候補を取得して試す。
+        # 例：「3,4-Dimethoxybenzyl」の末尾 "l" が欠落して「3,4-Dimethoxybenzy」と
+        # 誤認識された場合など、厳密な名前検索ではヒットしないケースに対応する。
+        # 連結候補（2行以上の化合物名）の方が情報量が多く本来の名前に近いため、
+        # それを優先的にオートコンプリートのクエリとして使う。
+        if not compound_info and candidates:
+            merged_candidates = [c for c in candidates if ' ' in c]
+            typo_search_targets = (merged_candidates[:2] or candidates[:2])
+            for target in typo_search_targets:
+                suggestions = get_pubchem_autocomplete_suggestions(target, limit=5)
+                for suggestion in suggestions:
+                    if suggestion in candidates:
+                        continue  # 完全一致で既に試して失敗済み
+                    result, name_risk_assessment = search_compound_by_name_with_risk(suggestion)
+                    if result:
+                        compound_info = result
+                        risk_assessment = name_risk_assessment
+                        matched_from_typo = suggestion
+                        print(f"[identify_compound] Found via typo-tolerant suggestion: "
+                              f"'{target}' -> '{suggestion}' -> {result.get('name')}, CAS={result.get('cas')}")
+                        break
+                if compound_info:
+                    break
+
     return {
         "cas_numbers": cas_numbers,
         "cas_number": cas_number,
         "compound_info": compound_info,
         "risk_assessment": risk_assessment,
+        "matched_from_typo": matched_from_typo,
     }
 
 def identify_compound_from_texts(texts):
@@ -559,13 +586,15 @@ async def perform_ocr(file: UploadFile = File(...)):
         cas_number = identify_result["cas_number"]
         compound_info = identify_result["compound_info"]
         risk_assessment = identify_result["risk_assessment"]
+        matched_from_typo = identify_result["matched_from_typo"]
 
         response_data = {
             "texts": texts,
             "cas_numbers": cas_numbers,  # すべてのCAS番号
             "cas_number": cas_number,    # 優先されるCAS番号（最初またはリスク対象）
             "compound_info": compound_info,
-            "risk_assessment": risk_assessment
+            "risk_assessment": risk_assessment,
+            "matched_from_typo": matched_from_typo,  # OCR誤読をオートコンプリートで補正した場合の候補名
         }
         print(f"[/ocr] Final response: all_cas_numbers={cas_numbers}, primary_cas={cas_number}, has_risk_assessment={risk_assessment is not None}")
         return JSONResponse(response_data)
