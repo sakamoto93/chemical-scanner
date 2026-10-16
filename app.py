@@ -490,55 +490,62 @@ def identify_compound_from_frames(frames):
                 print(f"[identify_compound] Risk assessment result: {risk_assessment}")
     else:
         # Phase 2: 化合物名で検索
-        # 候補1: 個々のテキスト（信頼度の高いものから順に、全フレームから重複排除）
-        best_by_text = {}
-        for t in all_texts:
-            existing = best_by_text.get(t['text'])
-            if existing is None or t['confidence'] > existing:
-                best_by_text[t['text']] = t['confidence']
-        candidates = [text for text, conf in
-                      sorted(best_by_text.items(), key=lambda kv: kv[1], reverse=True)
-                      if conf >= 0.85]
-
-        # 候補2: 各フレーム内で検出順に隣接する行同士を連結（2行以上に分かれた化合物名対策）
+        #
+        # 候補は「連結候補」（各フレーム内で隣接する行同士を結合したもの。
+        # 2行以上に分かれた化合物名対策）と「単独候補」（個々の行単体）の
+        # 2グループに分け、連結候補の方を完全一致・誤字許容検索の両方で
+        # 優先的に使い切ってから、単独候補を試す。
+        #
+        # 理由：化合物名が2行に分かれている場合、片方の行だけが「Alcohol」
+        # 「Acid」「Chloride」のような一般的な化学クラス名になっていることが
+        # あり、これ単独だとPubChem上で全く別の（だが実在する）化合物の
+        # 正式な同義語に一致してしまうことがある（実例：「3,4-Dimethoxybenzyl」
+        # +「Alcohol」のラベルで、"Alcohol"単独がPubChem上でethanolの
+        # 同義語として登録されているため、連結候補を試し切る前に単独一致で
+        # ethanolと誤判定されてしまった）。より情報量が多く具体的な連結候補を
+        # 完全に使い切ってから単独候補に進むことで、この種の誤判定を防ぐ。
+        merged_candidates = []
         for frame in frames:
             for i in range(len(frame) - 1):
                 t1, t2 = frame[i], frame[i + 1]
                 if t1['confidence'] >= 0.7 and t2['confidence'] >= 0.7:
                     merged = f"{t1['text']} {t2['text']}".strip()
-                    if merged and merged not in candidates:
-                        candidates.append(merged)
+                    if merged and merged not in merged_candidates:
+                        merged_candidates.append(merged)
 
-        for compound_name in candidates:
-            result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
-            if result:
-                compound_info = result
-                risk_assessment = name_risk_assessment
-                print(f"[identify_compound] Found compound from '{compound_name}': {result.get('name')}, CAS={result.get('cas')}")
-                print(f"[identify_compound] Risk assessment for {result.get('cas')}: {risk_assessment}")
-                break
+        best_by_text = {}
+        for t in all_texts:
+            existing = best_by_text.get(t['text'])
+            if existing is None or t['confidence'] > existing:
+                best_by_text[t['text']] = t['confidence']
+        individual_candidates = [
+            text for text, conf in sorted(best_by_text.items(), key=lambda kv: kv[1], reverse=True)
+            if conf >= 0.85 and text not in merged_candidates
+        ]
 
-        # Phase 2b: 完全一致で見つからない場合、OCRの文字誤認識（1文字欠落など）を
-        # 考慮し、PubChemのオートコンプリートAPIで近い綴りの候補を取得して試す。
-        # 例：「3,4-Dimethoxybenzyl」の末尾 "l" が欠落して「3,4-Dimethoxybenzy」と
-        # 誤認識された場合など、厳密な名前検索ではヒットしないケースに対応する。
-        #
-        # 【重要】オートコンプリートAPIは、クエリにほとんど一致しない単語でも
+        # PubChemのオートコンプリートAPIは、クエリにほとんど一致しない単語でも
         # 「それらしい」有名な化合物（例：Acahol → ethanol）を候補として返す
-        # ことがある。これをそのまま採用すると、全く違う化合物を確信を持って
-        # 誤表示してしまい、法令リスク判定まで誤るという重大な問題になる
-        # （実際にこのバグで、3,4-Dimethoxybenzyl Alcoholの瓶がethanolと
-        # 誤認識される事例が発生した）。そのため、クエリ文字列と候補文字列の
-        # 類似度（difflibによる比較）が一定以上の場合のみ採用する。
+        # ことがある。無条件に採用すると全く違う化合物を確信を持って
+        # 誤表示し、法令リスク判定まで誤るという重大な問題になるため、
+        # クエリ文字列と候補文字列の類似度（difflib）が一定以上の場合のみ採用する。
         TYPO_SIMILARITY_THRESHOLD = 0.65
-        if not compound_info and candidates:
-            merged_candidates = [c for c in candidates if ' ' in c]
-            # 短い断片同士のたまたまの連結より、情報量の多い（長い）候補を優先する
-            typo_search_targets = sorted(merged_candidates, key=len, reverse=True)[:3] or candidates[:2]
-            for target in typo_search_targets:
+        already_tried_names = set(merged_candidates) | set(individual_candidates)
+
+        def try_exact(name_list):
+            for compound_name in name_list:
+                result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
+                if result:
+                    print(f"[identify_compound] Found compound from '{compound_name}': "
+                          f"{result.get('name')}, CAS={result.get('cas')}")
+                    return result, name_risk_assessment, None
+            return None, None, None
+
+        def try_typo_tolerant(name_list):
+            # 短い断片より、情報量の多い（長い）候補を優先してオートコンプリートに渡す
+            for target in sorted(name_list, key=len, reverse=True)[:3]:
                 suggestions = get_pubchem_autocomplete_suggestions(target, limit=5)
                 for suggestion in suggestions:
-                    if suggestion in candidates:
+                    if suggestion in already_tried_names:
                         continue  # 完全一致で既に試して失敗済み
                     similarity = difflib.SequenceMatcher(None, target.lower(), suggestion.lower()).ratio()
                     if similarity < TYPO_SIMILARITY_THRESHOLD:
@@ -548,15 +555,23 @@ def identify_compound_from_frames(frames):
                         continue
                     result, name_risk_assessment = search_compound_by_name_with_risk(suggestion)
                     if result:
-                        compound_info = result
-                        risk_assessment = name_risk_assessment
-                        matched_from_typo = suggestion
                         print(f"[identify_compound] Found via typo-tolerant suggestion: "
                               f"'{target}' -> '{suggestion}' (similarity={similarity:.2f}) -> "
                               f"{result.get('name')}, CAS={result.get('cas')}")
-                        break
-                if compound_info:
-                    break
+                        return result, name_risk_assessment, suggestion
+            return None, None, None
+
+        # 連結候補（完全一致 → 誤字許容）を使い切ってから、単独候補（完全一致 → 誤字許容）を試す
+        for search_fn, name_list in (
+            (try_exact, merged_candidates),
+            (try_typo_tolerant, merged_candidates),
+            (try_exact, individual_candidates),
+            (try_typo_tolerant, individual_candidates),
+        ):
+            compound_info, risk_assessment, matched_from_typo = search_fn(name_list)
+            if compound_info:
+                print(f"[identify_compound] Risk assessment for {compound_info.get('cas')}: {risk_assessment}")
+                break
 
     return {
         "cas_numbers": cas_numbers,
