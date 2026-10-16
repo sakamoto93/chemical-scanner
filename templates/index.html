@@ -791,6 +791,15 @@
                             currentCompoundInfo = null;
                             addToListContainer.style.display = 'none';
                             addToListContainer.classList.remove('cas-priority');
+
+                            // 化合物名・CAS番号から特定できなかった場合でも、ラベルの分子式表記
+                            // （例：「...= 168.19」）から分子量らしき数値が読み取れていれば、
+                            // 手入力検索などで化合物を絞り込む参考情報として表示する。
+                            // 分子量だけでは同じ値の化合物が多数あり一意に特定できないため、
+                            // ここでは自動的に化合物を決定せず、あくまで参考情報として提示する。
+                            if (effectiveData.label_weights && effectiveData.label_weights.length > 0) {
+                                html += `<p style="color: #555; font-size: 0.9em; margin-top: 8px;">ℹ️ ラベルの分子式表記から分子量 ${effectiveData.label_weights.join(' / ')} 付近の値を検出しましたが、化合物を自動特定できませんでした。「試薬名を手入力して検索」で、分子量が近い化合物かどうかを確認する際の参考にしてください。</p>`;
+                            }
                         }
 
                         ocrResults.innerHTML = html || '<p>テキストが検出されませんでした</p>';

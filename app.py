@@ -441,6 +441,54 @@ async def capture_frame():
         iter([frame_bytes]),
         media_type="image/jpeg"
     )
+MOLECULAR_WEIGHT_PATTERN = re.compile(r'=\s*(\d{2,4}(?:[.,]\d{1,2})?)')
+
+def extract_label_molecular_weights(frames):
+    """ラベル上の分子式表記（例：「(CH3O)2C6H3CH2OH = 168.19」）から
+    分子量らしき数値を抽出する。
+
+    試薬ラベルには分子式とともに分子量が印字されていることが多く、化合物名や
+    CAS番号のOCRに失敗していても、この数値だけは比較的読み取りやすい。
+    単独で化合物を特定するには同じ分子量の化合物が多数あり曖昧すぎるため、
+    あくまで検索結果の答え合わせ（クロスチェック）用の参考値として使う。
+
+    OCRが「=」とその後の数値を別々の行に分割して検出することがあるため、
+    個々のテキストに加えて、各フレーム内で隣接する行同士を連結したものも
+    対象にする（化合物名の2行連結と同じ理由）。
+    """
+    weights = []
+    search_strings = []
+    for frame in frames:
+        for t in frame:
+            search_strings.append(t['text'])
+        for i in range(len(frame) - 1):
+            search_strings.append(f"{frame[i]['text']} {frame[i + 1]['text']}")
+
+    for s in search_strings:
+        for m in MOLECULAR_WEIGHT_PATTERN.finditer(s):
+            try:
+                value = float(m.group(1).replace(',', '.'))
+            except ValueError:
+                continue
+            # 試薬として非現実的な値（カタログ番号の残骸など）を除外
+            if 10 <= value <= 2000 and not any(abs(value - w) < 0.05 for w in weights):
+                weights.append(value)
+    return weights
+
+def weight_matches_label(candidate_weight, label_weights, tolerance=1.5):
+    """PubChemから得た候補化合物の分子量が、ラベルから読み取った分子量と
+    矛盾しないかを確認する。ラベル側の数値が読み取れていない場合は
+    判定材料がないため、チェックをスキップして常にTrueを返す
+    （＝分子量を理由に候補を却下することはない）。
+    """
+    if not label_weights:
+        return True
+    try:
+        candidate_value = float(candidate_weight)
+    except (TypeError, ValueError):
+        return True
+    return any(abs(candidate_value - w) <= tolerance for w in label_weights)
+
 def identify_compound_from_frames(frames):
     """OCRで検出したテキスト群からCAS番号抽出→検索、または化合物名検索を行う共通ロジック。
 
@@ -465,6 +513,9 @@ def identify_compound_from_frames(frames):
     compound_info = None
     risk_assessment = None
     matched_from_typo = None
+    label_weights = extract_label_molecular_weights(frames)
+    if label_weights:
+        print(f"[identify_compound] Molecular weight(s) extracted from label text: {label_weights}")
 
     if cas_numbers:
         # すべてのCAS番号に対してリスク判定を実行
@@ -535,6 +586,11 @@ def identify_compound_from_frames(frames):
             for compound_name in name_list:
                 result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
                 if result:
+                    if not weight_matches_label(result.get('weight'), label_weights):
+                        print(f"[identify_compound] Rejected exact match '{compound_name}' -> "
+                              f"{result.get('name')} (weight {result.get('weight')} does not match "
+                              f"label molecular weight(s) {label_weights})")
+                        continue
                     print(f"[identify_compound] Found compound from '{compound_name}': "
                           f"{result.get('name')}, CAS={result.get('cas')}")
                     return result, name_risk_assessment, None
@@ -555,6 +611,12 @@ def identify_compound_from_frames(frames):
                         continue
                     result, name_risk_assessment = search_compound_by_name_with_risk(suggestion)
                     if result:
+                        if not weight_matches_label(result.get('weight'), label_weights):
+                            print(f"[identify_compound] Rejected typo-tolerant suggestion "
+                                  f"'{target}' -> '{suggestion}' -> {result.get('name')} "
+                                  f"(weight {result.get('weight')} does not match "
+                                  f"label molecular weight(s) {label_weights})")
+                            continue
                         print(f"[identify_compound] Found via typo-tolerant suggestion: "
                               f"'{target}' -> '{suggestion}' (similarity={similarity:.2f}) -> "
                               f"{result.get('name')}, CAS={result.get('cas')}")
@@ -579,6 +641,7 @@ def identify_compound_from_frames(frames):
         "compound_info": compound_info,
         "risk_assessment": risk_assessment,
         "matched_from_typo": matched_from_typo,
+        "label_weights": label_weights,
     }
 
 def identify_compound_from_texts(texts):
@@ -618,6 +681,7 @@ async def perform_ocr(file: UploadFile = File(...)):
         compound_info = identify_result["compound_info"]
         risk_assessment = identify_result["risk_assessment"]
         matched_from_typo = identify_result["matched_from_typo"]
+        label_weights = identify_result["label_weights"]
 
         response_data = {
             "texts": texts,
@@ -626,6 +690,7 @@ async def perform_ocr(file: UploadFile = File(...)):
             "compound_info": compound_info,
             "risk_assessment": risk_assessment,
             "matched_from_typo": matched_from_typo,  # OCR誤読をオートコンプリートで補正した場合の候補名
+            "label_weights": label_weights,  # ラベルの分子式表記から読み取った分子量（クロスチェック用）
         }
         print(f"[/ocr] Final response: all_cas_numbers={cas_numbers}, primary_cas={cas_number}, has_risk_assessment={risk_assessment is not None}")
         return JSONResponse(response_data)
