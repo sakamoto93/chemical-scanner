@@ -145,6 +145,28 @@ h1 {
     background-color: #0056b3;
 }
 
+/* CAS番号が検出された場合、リストに追加ボタンへ視線誘導するための強調表示 */
+#add-to-list-container.cas-priority {
+    padding: 12px;
+    border: 2px solid #2e7d32;
+    border-radius: 8px;
+    background-color: #e8f5e9;
+    animation: cas-priority-pulse 1.5s ease-in-out infinite;
+}
+
+#add-to-list-container.cas-priority #add-to-list-btn {
+    background-color: #2e7d32;
+}
+
+#add-to-list-container.cas-priority #add-to-list-btn:hover {
+    background-color: #1b5e20;
+}
+
+@keyframes cas-priority-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(46, 125, 50, 0); }
+}
+
 .compound-list {
     margin-top: 30px;
     background-color: white;

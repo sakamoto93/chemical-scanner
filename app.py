@@ -440,6 +440,73 @@ async def capture_frame():
         iter([frame_bytes]),
         media_type="image/jpeg"
     )
+def identify_compound_from_texts(texts):
+    """OCRで検出したテキスト群からCAS番号抽出→検索、または化合物名検索を行う共通ロジック。
+
+    /ocr（1フレーム分）と /identify（複数フレーム分を蓄積したテキスト）の両方から呼ばれる。
+
+    化合物名がラベル上で2行以上に分かれて印字されている場合、OCRはそれぞれを
+    別々のテキストとして検出するため、個々の行だけで検索すると見つからないことが多い。
+    そこで、個々の行に加えて、OCRの検出順（概ねラベル上の上から下の読み順）で
+    隣接する行同士を連結した候補も合わせてPubChem検索にかける。
+    """
+    cas_numbers = extract_cas_numbers(texts)
+    cas_number = cas_numbers[0] if cas_numbers else None
+    compound_info = None
+    risk_assessment = None
+
+    if cas_numbers:
+        # すべてのCAS番号に対してリスク判定を実行
+        for cas in cas_numbers:
+            risk_result = check_risk_assessment(cas)
+            if risk_result:
+                # 最初のリスク対象化合物を使用
+                risk_assessment = risk_result
+                cas_number = cas  # リスク対象が見つかった場合、そのCAS番号を優先
+                print(f"[identify_compound] Found risk target: CAS={cas}, {risk_result}")
+                break
+
+        # リスク対象でない場合は、最初のCAS番号を使用
+        if not risk_assessment and cas_numbers:
+            cas_number = cas_numbers[0]
+
+        # Phase 1: CAS番号で検索
+        if cas_number:
+            compound_info = search_pubchem_by_cas(cas_number)
+            if not risk_assessment:
+                # Phase 1で見つけた場合、改めてリスク判定
+                risk_assessment = check_risk_assessment(cas_number)
+                print(f"[identify_compound] Risk assessment result: {risk_assessment}")
+    else:
+        # Phase 2: 化合物名で検索
+        # 候補1: 個々のテキスト（信頼度の高いものから順に）
+        sorted_texts = sorted(texts, key=lambda x: x['confidence'], reverse=True)
+        candidates = [t['text'] for t in sorted_texts if t['confidence'] >= 0.85]
+
+        # 候補2: 検出順で隣接する行同士を連結（2行以上に分かれた化合物名対策）
+        for i in range(len(texts) - 1):
+            t1, t2 = texts[i], texts[i + 1]
+            if t1['confidence'] >= 0.7 and t2['confidence'] >= 0.7:
+                merged = f"{t1['text']} {t2['text']}".strip()
+                if merged and merged not in candidates:
+                    candidates.append(merged)
+
+        for compound_name in candidates:
+            result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
+            if result:
+                compound_info = result
+                risk_assessment = name_risk_assessment
+                print(f"[identify_compound] Found compound from '{compound_name}': {result.get('name')}, CAS={result.get('cas')}")
+                print(f"[identify_compound] Risk assessment for {result.get('cas')}: {risk_assessment}")
+                break
+
+    return {
+        "cas_numbers": cas_numbers,
+        "cas_number": cas_number,
+        "compound_info": compound_info,
+        "risk_assessment": risk_assessment,
+    }
+
 @app.post("/ocr")
 async def perform_ocr(file: UploadFile = File(...)):
     try:
@@ -467,54 +534,11 @@ async def perform_ocr(file: UploadFile = File(...)):
                         "confidence": float(score)
                     })
 
-        # CAS番号を抽出（複数対応）
-        cas_numbers = extract_cas_numbers(texts)
-        cas_number = cas_numbers[0] if cas_numbers else None  # 最初のCAS番号を使用
-        compound_info = None
-        risk_assessment = None
-
-        print(f"[/ocr] Extracted CAS numbers: {cas_numbers}")
-
-        if cas_numbers:
-            # すべてのCAS番号に対してリスク判定を実行
-            for cas in cas_numbers:
-                risk_result = check_risk_assessment(cas)
-                if risk_result:
-                    # 最初のリスク対象化合物を使用
-                    risk_assessment = risk_result
-                    cas_number = cas  # リスク対象が見つかった場合、そのCAS番号を優先
-                    print(f"[/ocr] Found risk target: CAS={cas}, {risk_result}")
-                    break
-
-            # リスク対象でない場合は、最初のCAS番号を使用
-            if not risk_assessment and cas_numbers:
-                cas_number = cas_numbers[0]
-
-            # Phase 1: CAS番号で検索
-            if cas_number:
-                compound_info = search_pubchem_by_cas(cas_number)
-                if not risk_assessment:
-                    # Phase 1で見つけた場合、改めてリスク判定
-                    risk_assessment = check_risk_assessment(cas_number)
-                    print(f"[/ocr] Risk assessment result: {risk_assessment}")
-        else:
-            # Phase 2: 化合物名で検索（信頼度が高いテキストから順に試す）
-            # 信頼度でソート（降順）
-            sorted_texts = sorted(texts, key=lambda x: x['confidence'], reverse=True)
-
-            for text_obj in sorted_texts:
-                compound_name = text_obj['text']
-                confidence = text_obj['confidence']
-
-                # 信頼度が一定以上のテキストのみ検索
-                if confidence >= 0.85:
-                    result, name_risk_assessment = search_compound_by_name_with_risk(compound_name)
-                    if result:
-                        compound_info = result
-                        risk_assessment = name_risk_assessment
-                        print(f"[/ocr] Found compound from name '{compound_name}': {result.get('name')}, CAS={result.get('cas')}")
-                        print(f"[/ocr] Risk assessment for {result.get('cas')}: {risk_assessment}")
-                        break
+        identify_result = identify_compound_from_texts(texts)
+        cas_numbers = identify_result["cas_numbers"]
+        cas_number = identify_result["cas_number"]
+        compound_info = identify_result["compound_info"]
+        risk_assessment = identify_result["risk_assessment"]
 
         response_data = {
             "texts": texts,
@@ -529,6 +553,27 @@ async def perform_ocr(file: UploadFile = File(...)):
         import traceback
         tb = traceback.format_exc()
         print(f"[/ocr] ❌ Exception: {e}")
+        print(tb)
+        return JSONResponse({"error": str(e), "traceback": tb}, status_code=400)
+
+@app.post("/identify")
+async def identify_from_texts(data: dict):
+    """複数フレーム分のOCRテキストを蓄積して渡すと、横断的にCAS番号・化合物名を照合する。
+
+    小さい瓶など、1回の撮影ではラベル全体（化合物名の全行）が視野に収まらない場合に、
+    フロントエンド側で複数アングル分のOCR結果を蓄積し、まとめてこのエンドポイントに
+    渡すことで、単一フレームでは見つからなかった化合物を特定できるようにするために使う。
+    """
+    try:
+        texts = data.get("texts", [])
+        result = identify_compound_from_texts(texts)
+        print(f"[/identify] texts_count={len(texts)}, primary_cas={result['cas_number']}, "
+              f"has_compound_info={result['compound_info'] is not None}")
+        return JSONResponse(result)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[/identify] ❌ Exception: {e}")
         print(tb)
         return JSONResponse({"error": str(e), "traceback": tb}, status_code=400)
 
