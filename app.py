@@ -17,6 +17,7 @@ from paddleocr import PaddleOCR
 import io
 from PIL import Image
 import re
+import difflib
 import time
 import csv
 from datetime import datetime
@@ -521,23 +522,38 @@ def identify_compound_from_frames(frames):
         # 考慮し、PubChemのオートコンプリートAPIで近い綴りの候補を取得して試す。
         # 例：「3,4-Dimethoxybenzyl」の末尾 "l" が欠落して「3,4-Dimethoxybenzy」と
         # 誤認識された場合など、厳密な名前検索ではヒットしないケースに対応する。
-        # 連結候補（2行以上の化合物名）の方が情報量が多く本来の名前に近いため、
-        # それを優先的にオートコンプリートのクエリとして使う。
+        #
+        # 【重要】オートコンプリートAPIは、クエリにほとんど一致しない単語でも
+        # 「それらしい」有名な化合物（例：Acahol → ethanol）を候補として返す
+        # ことがある。これをそのまま採用すると、全く違う化合物を確信を持って
+        # 誤表示してしまい、法令リスク判定まで誤るという重大な問題になる
+        # （実際にこのバグで、3,4-Dimethoxybenzyl Alcoholの瓶がethanolと
+        # 誤認識される事例が発生した）。そのため、クエリ文字列と候補文字列の
+        # 類似度（difflibによる比較）が一定以上の場合のみ採用する。
+        TYPO_SIMILARITY_THRESHOLD = 0.65
         if not compound_info and candidates:
             merged_candidates = [c for c in candidates if ' ' in c]
-            typo_search_targets = (merged_candidates[:2] or candidates[:2])
+            # 短い断片同士のたまたまの連結より、情報量の多い（長い）候補を優先する
+            typo_search_targets = sorted(merged_candidates, key=len, reverse=True)[:3] or candidates[:2]
             for target in typo_search_targets:
                 suggestions = get_pubchem_autocomplete_suggestions(target, limit=5)
                 for suggestion in suggestions:
                     if suggestion in candidates:
                         continue  # 完全一致で既に試して失敗済み
+                    similarity = difflib.SequenceMatcher(None, target.lower(), suggestion.lower()).ratio()
+                    if similarity < TYPO_SIMILARITY_THRESHOLD:
+                        print(f"[identify_compound] Rejected autocomplete suggestion '{suggestion}' "
+                              f"for '{target}' (similarity={similarity:.2f} < {TYPO_SIMILARITY_THRESHOLD}, "
+                              f"likely unrelated compound, not an OCR typo)")
+                        continue
                     result, name_risk_assessment = search_compound_by_name_with_risk(suggestion)
                     if result:
                         compound_info = result
                         risk_assessment = name_risk_assessment
                         matched_from_typo = suggestion
                         print(f"[identify_compound] Found via typo-tolerant suggestion: "
-                              f"'{target}' -> '{suggestion}' -> {result.get('name')}, CAS={result.get('cas')}")
+                              f"'{target}' -> '{suggestion}' (similarity={similarity:.2f}) -> "
+                              f"{result.get('name')}, CAS={result.get('cas')}")
                         break
                 if compound_info:
                     break

@@ -723,7 +723,7 @@
                         // OCRの文字誤認識（1文字欠落など）をPubChemのオートコンプリートで
                         // 補正して見つかった場合、その旨を表示する
                         if (effectiveData.matched_from_typo) {
-                            html += `<p style="color: #1565c0; font-size: 0.9em; margin-top: 8px;">ℹ️ OCR読み取り結果の誤認識を考慮し、類似名「${effectiveData.matched_from_typo}」で化合物を特定しました</p>`;
+                            html += `<p style="color: #e65100; font-size: 0.9em; margin-top: 8px;">⚠️ OCR読み取り結果の誤認識を考慮し、類似名「${effectiveData.matched_from_typo}」で自動補正して検索した結果です。誤認識の可能性があるため、必ず試薬ラベルの実物と照合してください。</p>`;
                         }
 
                         // CAS番号が検出されたかどうか
