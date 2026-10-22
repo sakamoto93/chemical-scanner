@@ -122,7 +122,15 @@ def process(input_path, risk_csv_path, output_csv_path):
     risk_db = load_risk_db(risk_csv_path)
     print(f"✅ リスクアセスメント対象DB読み込み: {len(risk_db)}件\n")
 
-    wb = openpyxl.load_workbook(input_path, data_only=True)
+    try:
+        wb = openpyxl.load_workbook(input_path, data_only=True)
+    except openpyxl.utils.exceptions.InvalidFileException:
+        print(f"❌ エラー: '{input_path}' は openpyxl が対応していない形式（拡張子が.xlsxでも"
+              f"中身が古い.xls形式の場合などに起きます）です。")
+        print("   対応方法: Excel（またはNumbers）でこのファイルを開き、")
+        print("   「名前を付けて保存」→ ファイル形式を「Excelブック (.xlsx)」にして")
+        print("   別名で保存し直してから、そのファイルを再度指定してください。")
+        sys.exit(1)
     ws = wb.active
 
     rows_out = []
