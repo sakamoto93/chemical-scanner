@@ -22,8 +22,12 @@ CAS番号を検索し、労働安全衛生法リスクアセスメント対象�
 - Polybuffer、Formyl-Cellulofineのような独自調合・樹脂製品は、
   単一のCAS番号が存在しないため検索対象外としてスキップする。
 
+入力ファイルは .xlsx と .csv のどちらにも対応している（拡張子で自動判定）。
+Excelの保存形式（.xls/.xlsx/「97-2004」等）の違いでエラーになる場合は、
+「CSV UTF-8 (.csv)」形式で保存し直した.csvファイルを渡すのが最も確実。
+
 使い方:
-    python scripts/lookup_reagent_cas.py <元のExcelファイル> \\
+    python scripts/lookup_reagent_cas.py <元のExcelファイルまたはCSVファイル> \\
         [--risk-csv data/risk_assessment.csv] \\
         [--output 出力CSVファイル名]
 """
@@ -118,23 +122,55 @@ def search_pubchem_by_name(compound_name):
     return None
 
 
+def read_rows(input_path):
+    """入力ファイルの拡張子に応じて、Excel(.xlsx)またはCSVを読み込み、
+    行ごとのタプル（name, 容量, Cat#, 会社, 容器素材, ...）を順に返す。
+
+    CSVはExcel形式の曖昧さ（.xls/.xlsx/「97-2004」等）を避けられるため、
+    xlsxの読み込みでトラブルが続く場合の代替手段として用意している。
+    """
+    ext = os.path.splitext(input_path)[1].lower()
+    if ext == '.csv':
+        # ExcelのMac版「CSV UTF-8」はBOM付きUTF-8、日本語版Excel/Numbersの
+        # 従来のCSV書き出しはShift-JIS(cp932)になっていることがあるため両方試す
+        last_error = None
+        for encoding in ('utf-8-sig', 'cp932'):
+            try:
+                with open(input_path, newline='', encoding=encoding) as f:
+                    rows = list(csv.reader(f))
+                for row in rows:
+                    yield tuple(row)
+                return
+            except UnicodeDecodeError as e:
+                last_error = e
+                continue
+        print(f"❌ エラー: '{input_path}' の文字コードを認識できませんでした（{last_error}）。")
+        print("   Excelで保存し直す際、ファイル形式として「CSV UTF-8 (.csv)」を")
+        print("   選んでいるか確認してください。")
+        sys.exit(1)
+    else:
+        try:
+            wb = openpyxl.load_workbook(input_path, data_only=True)
+        except openpyxl.utils.exceptions.InvalidFileException:
+            print(f"❌ エラー: '{input_path}' は openpyxl が対応していない形式（拡張子が.xlsxでも"
+                  f"中身が古い.xls形式の場合などに起きます）です。")
+            print("   対応方法1: Excel（またはNumbers）でこのファイルを開き、")
+            print("   「名前を付けて保存」→ ファイル形式を「Excelブック (.xlsx)」にして")
+            print("   別名で保存し直してから、そのファイルを再度指定してください。")
+            print("   対応方法2（より確実）: 同様に「CSV UTF-8 (.csv)」形式で保存し直し、")
+            print("   拡張子が.csvのファイルを指定してください（このスクリプトは.csvにも対応しています）。")
+            sys.exit(1)
+        ws = wb.active
+        for row in ws.iter_rows(values_only=True):
+            yield row
+
+
 def process(input_path, risk_csv_path, output_csv_path):
     risk_db = load_risk_db(risk_csv_path)
     print(f"✅ リスクアセスメント対象DB読み込み: {len(risk_db)}件\n")
 
-    try:
-        wb = openpyxl.load_workbook(input_path, data_only=True)
-    except openpyxl.utils.exceptions.InvalidFileException:
-        print(f"❌ エラー: '{input_path}' は openpyxl が対応していない形式（拡張子が.xlsxでも"
-              f"中身が古い.xls形式の場合などに起きます）です。")
-        print("   対応方法: Excel（またはNumbers）でこのファイルを開き、")
-        print("   「名前を付けて保存」→ ファイル形式を「Excelブック (.xlsx)」にして")
-        print("   別名で保存し直してから、そのファイルを再度指定してください。")
-        sys.exit(1)
-    ws = wb.active
-
     rows_out = []
-    for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+    for row_idx, row in enumerate(read_rows(input_path), 1):
         if row_idx == 1:
             continue  # ヘッダー行
         if row is None or all(c is None for c in row):
